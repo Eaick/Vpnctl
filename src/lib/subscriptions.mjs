@@ -416,8 +416,6 @@ export async function writeManagedConfig(currentConfig = createConfig()) {
   ];
 
   const document = {
-    port: Number(new URL(currentConfig.httpProxy).port),
-    'socks-port': Number(new URL(currentConfig.socksProxy).port),
     mode: 'rule',
     'allow-lan': false,
     'log-level': 'info',
@@ -430,6 +428,13 @@ export async function writeManagedConfig(currentConfig = createConfig()) {
     'proxy-groups': proxyGroups,
     rules: [`MATCH,${rootGroupName}`]
   };
+
+  if (currentConfig.proxyMode === 'mix') {
+    document['mixed-port'] = Number(new URL(currentConfig.httpProxy).port);
+  } else {
+    document.port = Number(new URL(currentConfig.httpProxy).port);
+    document['socks-port'] = Number(new URL(currentConfig.socksProxy).port);
+  }
 
   await fs.mkdir(path.dirname(currentConfig.generatedConfigFile), { recursive: true });
   await fs.writeFile(currentConfig.generatedConfigFile, YAML.stringify(document), 'utf8');

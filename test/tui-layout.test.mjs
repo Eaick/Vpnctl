@@ -66,5 +66,6 @@ test('getVisibleWindow keeps selected row inside viewport', () => {
 
 test('status density becomes compact on short terminals', () => {
   assert.equal(getStatusDensity(20), 'compact');
-  assert.equal(getStatusDensity(24), 'full');
+  assert.equal(getStatusDensity(24), 'compact');
+  assert.equal(getStatusDensity(26), 'full');
 });

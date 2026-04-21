@@ -8,7 +8,8 @@ test('install hint contains mihomo binary guidance', () => {
   assert.match(hint, /(vpnctl init|vpnctl dev init|MIHOMO_BIN)/);
 });
 
-test('install hint reminds user to avoid default proxy ports when needed', () => {
+test('install hint reminds user about mix mode and default ports', () => {
   const hint = getMihomoInstallHint();
-  assert.match(hint, /(7890|7891)/);
+  assert.match(hint, /(mix|mixed)/i);
+  assert.match(hint, /(7890|9090)/);
 });

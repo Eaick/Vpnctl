@@ -4,7 +4,9 @@ import {
   createAddSubscriptionModal,
   createDeleteSubscriptionModal,
   createInitProgressModal,
+  createPortModal,
   createShellInstallModal,
+  rebuildPortModal,
   cycleModalFieldOption,
   getPrimaryGuidedAction,
   buildOverviewGuide,
@@ -19,9 +21,9 @@ function createSnapshot(overrides = {}) {
       subscriptionCount: 1,
       apiAlive: true,
       mode: 'user',
+      proxyMode: 'mix',
       ports: {
-        http: { port: 7890, available: true },
-        socks: { port: 7891, available: true },
+        mixed: { port: 7890, available: true },
         api: { port: 9090, available: true }
       },
       shellIntegration: { installed: true, codexWrapper: true, bashrcPath: '/home/test/.bashrc' },
@@ -46,13 +48,12 @@ test('getPrimaryGuidedAction follows init to ready flow', () => {
   );
 });
 
-test('buildOverviewGuide explains next server step and ready state', () => {
+test('buildOverviewGuide explains init and ready states', () => {
   const initGuide = buildOverviewGuide(createSnapshot({ status: { initialized: false } })).join('\n');
-  assert.match(initGuide, /初始化/);
+  assert.match(initGuide, /mix/);
 
   const readyGuide = buildOverviewGuide(createSnapshot({ providers: [{ id: 'VPNCTL' }] })).join('\n');
-  assert.match(readyGuide, /codex/);
-  assert.match(readyGuide, /B 会话/);
+  assert.match(readyGuide, /VPN|codex/i);
 });
 
 test('buildShellGuide explains same-account reuse', () => {
@@ -70,27 +71,36 @@ test('buildShellGuide explains same-account reuse', () => {
       }
     })
   ).join('\n');
-  assert.match(waiting, /A 会话/);
+  assert.match(waiting, /A .* mihomo|B .* codex/);
 
   const ready = buildShellGuide(createSnapshot()).join('\n');
-  assert.match(ready, /B 会话/);
+  assert.match(ready, /codex/);
 });
 
-test('wizard modal helpers expose guided fields and option cycling', () => {
+test('wizard modal helpers expose mode-aware fields and option cycling', () => {
   const subModal = createAddSubscriptionModal();
   assert.equal(subModal.fields[0].key, 'sourceType');
   assert.equal(cycleModalFieldOption(subModal.fields[0], 1), 'file');
 
+  const portModal = createPortModal(createSnapshot());
+  assert.equal(portModal.fields[0].key, 'proxyMode');
+  assert.equal(portModal.fields[1].key, 'mixed');
+
+  const separateModal = rebuildPortModal(portModal, createSnapshot(), 'separate');
+  assert.equal(separateModal.fields[1].key, 'http');
+  assert.equal(separateModal.fields[2].key, 'socks');
+
   const shellModal = createShellInstallModal(createSnapshot());
   assert.equal(shellModal.type, 'shell-install');
-  assert.match(shellModal.prompt, /codex/);
+  assert.match(shellModal.prompt, /VPN|vpn/i);
 
   const deleteModal = createDeleteSubscriptionModal({
     id: 'sub-1',
     displayName: 'A',
     source: 'https://example.com/sub',
     cachePath: '/tmp/cache.yaml',
-    providerPath: '/tmp/provider.yaml'
+    providerPath: '/tmp/provider.yaml',
+    enabled: true
   });
   assert.equal(deleteModal.type, 'confirm-remove-sub');
   assert.match(deleteModal.notes.join('\n'), /Provider/);

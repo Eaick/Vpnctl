@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createConfig } from './config.mjs';
-import { isApiAlive } from './mihomo.mjs';
+import { isManagedRuntimeActive } from './managed-runtime.mjs';
 import { saveInstallState } from './install.mjs';
 
 const BLOCK_START = '# >>> vpnctl >>>';
@@ -32,7 +32,7 @@ export async function buildShellExports({ shell = 'bash', quiet = false } = {}) 
     throw new Error(`Unsupported shell=${shell}. Only bash/sh are supported.`);
   }
 
-  const alive = await isApiAlive();
+  const alive = await isManagedRuntimeActive(config);
   const lines = [];
 
   if (alive) {

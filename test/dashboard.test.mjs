@@ -4,7 +4,7 @@ import { buildNodeTags, mapGroupToProviderView, getSessionReuseStatus } from '..
 
 test('buildNodeTags marks current nodes and extracts region hint', () => {
   const tags = buildNodeTags('日本 03', { isCurrent: true });
-  assert.deepEqual(tags, ['CURRENT', '日本']);
+  assert.deepEqual(tags, ['当前', '日本']);
 });
 
 test('mapGroupToProviderView keeps order and filters hidden nodes', () => {

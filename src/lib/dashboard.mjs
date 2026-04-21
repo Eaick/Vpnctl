@@ -1,7 +1,6 @@
 import { createConfig } from './config.mjs';
-import { cleanCandidates, getGroups, getVersion, chooseNode, testProxyDelay, isApiAlive } from './mihomo.mjs';
+import { cleanCandidates, getGroups, getVersion, chooseNode, testProxyDelay } from './mihomo.mjs';
 import { probeConfiguredPortPlan } from './ports.mjs';
-import { readPid, isPidAlive } from './process.mjs';
 import {
   loadSubscriptionProviderViews,
   loadSubscriptions
@@ -10,6 +9,7 @@ import { detectOldInstall, summarizeMigrationState } from './migration.mjs';
 import { detectShellIntegration } from './shell.mjs';
 import { listKnownRuntimeLocks } from './runtime-lock.mjs';
 import { formatProtocolTag, normalizeProtocolName } from './subscriptions.mjs';
+import { getManagedRuntimeStatus } from './managed-runtime.mjs';
 
 const REGION_TAGS = [
   'Hong Kong',
@@ -35,7 +35,7 @@ const REGION_TAGS = [
 export function buildNodeTags(label, { isCurrent = false } = {}) {
   const tags = [];
 
-  if (isCurrent) tags.push('CURRENT');
+  if (isCurrent) tags.push('当前');
 
   for (const tag of REGION_TAGS) {
     if (label.includes(tag)) {
@@ -97,52 +97,53 @@ export function getSessionReuseStatus({ apiAlive, shellIntegration }) {
   if (!shellIntegration?.installed || !shellIntegration?.codexWrapper) {
     return {
       state: 'unavailable',
-      label: 'Install bash shell integration to enable direct codex reuse'
+      label: '安装 bash shell 集成后，可直接复用当前 VPN 运行 codex'
     };
   }
 
   if (!apiAlive) {
     return {
       state: 'waiting',
-      label: 'Shell is ready; once any session starts mihomo, other same-account sessions can run codex directly'
+      label: 'Shell 已准备好；任意同账号会话先启动 mihomo 后，其他会话即可直接运行 codex'
     };
   }
 
   return {
     state: 'ready',
-    label: 'Same-account sessions can run codex directly and reuse the running VPN'
+    label: '同账号会话可以直接运行 codex，并复用当前 VPN'
   };
 }
 
 function buildNextSteps({ config, providers, subscriptions, apiAlive, shellIntegration }) {
   if (!config.isInitialized) {
-    return ['Run dev init / init'];
+    return ['先执行 dev init / init'];
   }
 
   if (!subscriptions.length) {
-    return ['Add a subscription URL or YAML'];
+    return ['添加订阅 URL 或 YAML'];
   }
 
   if (!providers.length) {
-    return ['Run sync to generate providers'];
+    return ['执行同步生成 providers'];
   }
 
   if (!apiAlive) {
-    return ['Start mihomo', 'Refresh dashboard'];
+    return ['启动 mihomo', '刷新面板'];
   }
 
   if (!shellIntegration?.installed || !shellIntegration?.codexWrapper) {
-    return ['Install bash shell integration', 'Review shell proxy'];
+    return ['安装 bash shell 集成', '检查 shell 代理'];
   }
 
-  return ['Select a node', 'Measure latency', 'Review shell proxy'];
+  return ['选择节点', '执行测速', '检查 shell 代理'];
 }
 
 export async function loadDashboardSnapshot() {
   const config = createConfig();
-  const apiAlive = await isApiAlive();
-  const pid = await readPid();
-  const pidAlive = await isPidAlive(pid);
+  const runtimeStatus = await getManagedRuntimeStatus(config);
+  const apiAlive = runtimeStatus.managedApiAlive;
+  const pid = runtimeStatus.pid;
+  const pidAlive = runtimeStatus.pidAlive;
   const ports = await probeConfiguredPortPlan(config);
   const subscriptions = await loadSubscriptions(config);
   const shellIntegration = await detectShellIntegration().catch(() => ({
@@ -155,6 +156,7 @@ export async function loadDashboardSnapshot() {
   const runtimeLocks = await listKnownRuntimeLocks();
   const migration = await summarizeMigrationState(config);
   const oldInstall = await detectOldInstall();
+  const activeSubscription = subscriptions.find((item) => item.enabled) || null;
 
   let version = null;
   let providers = [];
@@ -183,14 +185,19 @@ export async function loadDashboardSnapshot() {
       apiAlive,
       pid,
       pidAlive,
+      apiReachable: runtimeStatus.apiReachable,
+      foreignApiAlive: runtimeStatus.foreignApiAlive,
       version,
       mode: config.mode,
       initialized: config.isInitialized,
       configDir: config.configDir,
       dataDir: config.dataDir,
       defaultGroup: config.defaultGroup,
+      proxyMode: config.proxyMode,
+      activeSubscriptionLabel: activeSubscription?.displayName || '',
       httpProxy: config.httpProxy,
       socksProxy: config.socksProxy,
+      mixedProxy: config.mixedProxy,
       mihomoApi: config.mihomoApi,
       logFile: config.logFile,
       ports,

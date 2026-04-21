@@ -225,11 +225,44 @@ test('writeManagedConfig only renders active subscription providers', async () =
   await writeManagedConfig(config);
   const rendered = YAML.parse(await fs.readFile(config.generatedConfigFile, 'utf8'));
   assert.deepEqual(Object.keys(rendered['proxy-providers']), ['a-sub1']);
+  assert.equal(rendered['mixed-port'], 17890);
+  assert.equal(rendered['socks-port'], undefined);
   assert.deepEqual(rendered['proxy-groups'][0], {
     name: 'A',
     type: 'select',
     use: ['a-sub1']
   });
+});
+
+test('writeManagedConfig renders separate ports when configured', async () => {
+  const config = createConfig('dev', {
+    proxyMode: 'separate',
+    ports: {
+      http: 17890,
+      socks: 17891,
+      api: 19090
+    }
+  });
+  await ensureSubscriptionStore(config);
+  await saveSubscriptions(config, [
+    {
+      id: 'sub1',
+      type: 'remote',
+      source: 'https://example.com/a',
+      displayName: 'A',
+      providerKey: 'a-sub1',
+      enabled: true,
+      syncStatus: 'pending'
+    }
+  ]);
+
+  const { writeManagedConfig } = await import('../src/lib/subscriptions.mjs');
+  await writeManagedConfig(config);
+  const rendered = YAML.parse(await fs.readFile(config.generatedConfigFile, 'utf8'));
+
+  assert.equal(rendered.port, 17890);
+  assert.equal(rendered['socks-port'], 17891);
+  assert.equal(rendered['mixed-port'], undefined);
 });
 
 test('loadSubscriptions repairs legacy provider paths into config/providers', async () => {

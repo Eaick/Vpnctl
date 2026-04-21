@@ -77,6 +77,8 @@ async function main() {
 
   const initArgs = {
     skipDownload: Boolean(flags['skip-download']),
+    proxyMode: flags['proxy-mode'],
+    mixedPort: flags['mixed-port'],
     httpPort: flags['http-port'],
     socksPort: flags['socks-port'],
     apiPort: flags['api-port']
@@ -100,6 +102,8 @@ async function main() {
     const subcommand = rest[0];
     if (subcommand === 'set-ports') {
       await cmdConfigSetPorts({
+        proxyMode: flags['proxy-mode'],
+        mixed: flags.mixed,
         http: flags.http,
         socks: flags.socks,
         api: flags.api

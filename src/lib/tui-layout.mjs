@@ -19,8 +19,8 @@ export function getProviderPaneWidth(width) {
 }
 
 export function getViewportHeights(height) {
-  const top = 3;
-  const bottom = 2;
+  const top = 5;
+  const bottom = 3;
   const middle = Math.max(1, height - top - bottom);
 
   return { top, middle, bottom };
@@ -48,7 +48,7 @@ export function filterItems(items, query, labelGetter = (item) => item?.label ||
   const normalized = normalizeQuery(query);
   if (!normalized) return items;
 
-    return items.filter((item) => labelGetter(item).toLowerCase().includes(normalized));
+  return items.filter((item) => labelGetter(item).toLowerCase().includes(normalized));
 }
 
 export function filterNodesByProtocol(items, protocol = 'all') {
@@ -90,5 +90,5 @@ export function moveSelection(currentIndex, direction, itemCount) {
 }
 
 export function getStatusDensity(height) {
-  return height < 24 ? 'compact' : 'full';
+  return height < 26 ? 'compact' : 'full';
 }

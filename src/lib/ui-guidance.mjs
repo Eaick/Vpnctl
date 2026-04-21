@@ -1,109 +1,207 @@
-function getFieldValue(snapshot, key, fallback = '') {
+function getPortValue(snapshot, key, fallback = '') {
   return snapshot?.status?.ports?.[key]?.port ? String(snapshot.status.ports[key].port) : fallback;
+}
+
+function resolveProxyMode(snapshotOrMode) {
+  if (snapshotOrMode === 'separate') return 'separate';
+  if (snapshotOrMode?.status?.proxyMode === 'separate') return 'separate';
+  return 'mix';
+}
+
+function getPortDefaults(proxyMode) {
+  if (proxyMode === 'separate') {
+    return {
+      http: '7890',
+      socks: '7891',
+      api: '9090'
+    };
+  }
+
+  return {
+    mixed: '7890',
+    api: '9090'
+  };
+}
+
+function buildPortFields(snapshot, proxyMode, currentValues = {}) {
+  const defaults = getPortDefaults(proxyMode);
+  const fields = [
+    {
+      key: 'proxyMode',
+      label: '\u6a21\u5f0f',
+      value: proxyMode,
+      options: ['mix', 'separate']
+    }
+  ];
+
+  if (proxyMode === 'separate') {
+    fields.push(
+      {
+        key: 'http',
+        label: 'HTTP',
+        value: currentValues.http ?? getPortValue(snapshot, 'http', defaults.http),
+        placeholder: defaults.http
+      },
+      {
+        key: 'socks',
+        label: 'SOCKS',
+        value: currentValues.socks ?? getPortValue(snapshot, 'socks', defaults.socks),
+        placeholder: defaults.socks
+      }
+    );
+  } else {
+    fields.push({
+      key: 'mixed',
+      label: '\u6df7\u5408\u7aef\u53e3',
+      value: currentValues.mixed ?? getPortValue(snapshot, 'mixed', defaults.mixed),
+      placeholder: defaults.mixed
+    });
+  }
+
+  fields.push({
+    key: 'api',
+    label: 'API',
+    value: currentValues.api ?? getPortValue(snapshot, 'api', defaults.api),
+    placeholder: defaults.api
+  });
+
+  return fields;
+}
+
+function buildPortNotes(snapshot, proxyMode) {
+  const source = snapshot?.status?.portSource || 'default';
+  if (proxyMode === 'separate') {
+    return [
+      'separate\uff1a\u4f7f\u7528 http + socks + api \u4e09\u4e2a\u7aef\u53e3\u3002',
+      '\u4fdd\u5b58\u540e\u4f1a\u81ea\u52a8\u91cd\u63a2\u6d4b\u53ef\u7528\u7aef\u53e3\uff0c\u907f\u514d\u6cbf\u7528\u51b2\u7a81\u7aef\u53e3\u3002',
+      `\u5f53\u524d\u7aef\u53e3\u6765\u6e90\uff1a${source}`
+    ];
+  }
+
+  return [
+    'mix\uff1a\u4f7f\u7528 mixed + api\uff0cHTTP \u548c SOCKS5 \u5171\u7528\u4e00\u4e2a\u4ee3\u7406\u7aef\u53e3\u3002',
+    '\u4fdd\u5b58\u540e\u4f1a\u81ea\u52a8\u91cd\u63a2\u6d4b\u53ef\u7528\u7aef\u53e3\uff0c\u51cf\u5c11\u5360\u7528\u5e76\u89c4\u907f\u51b2\u7a81\u3002',
+    `\u5f53\u524d\u7aef\u53e3\u6765\u6e90\uff1a${source}`
+  ];
+}
+
+function getCurrentFieldValues(modal) {
+  const values = {};
+  for (const field of modal?.fields || []) {
+    values[field.key] = field.value;
+  }
+  return values;
+}
+
+function buildPortModalBase(type, title, prompt, snapshot, proxyMode, currentValues = {}) {
+  return {
+    type,
+    title,
+    prompt,
+    fields: buildPortFields(snapshot, proxyMode, currentValues),
+    notes: buildPortNotes(snapshot, proxyMode),
+    activeField: 0,
+    submitText: 'Enter \u4fdd\u5b58 | Tab/\u4e0a\u4e0b\u5207\u6362\u5b57\u6bb5 | \u5de6\u53f3\u5207\u6362\u6a21\u5f0f | Esc \u53d6\u6d88'
+  };
 }
 
 export function createAddSubscriptionModal() {
   return {
     type: 'add-sub',
-    title: '添加订阅',
-    prompt: '选择导入方式，然后填写服务器上的订阅来源。',
+    title: '\u6dfb\u52a0\u8ba2\u9605',
+    prompt: '\u9009\u62e9\u5bfc\u5165\u65b9\u5f0f\uff0c\u7136\u540e\u586b\u5199\u670d\u52a1\u5668\u4e0a\u7684\u8ba2\u9605\u6765\u6e90\u3002',
     fields: [
-      { key: 'sourceType', label: '导入方式', value: 'url', options: ['url', 'file'] },
-      { key: 'source', label: '来源', value: '', placeholder: 'https://example.com/sub 或 /srv/vpn/subscription.yaml' },
-      { key: 'alias', label: '别名', value: '', placeholder: '可选，例如 生产机场' }
+      { key: 'sourceType', label: '\u6765\u6e90\u7c7b\u578b', value: 'url', options: ['url', 'file'] },
+      { key: 'source', label: '\u6765\u6e90', value: '', placeholder: 'https://example.com/sub \u6216 /srv/vpn/subscription.yaml' },
+      { key: 'alias', label: '\u522b\u540d', value: '', placeholder: '\u53ef\u9009\uff0c\u7559\u7a7a\u5219\u4f7f\u7528\u8ba2\u9605\u540d' }
     ],
     notes: [
-      'url: 远程订阅地址',
-      'file: 服务器上的本地 YAML 文件路径'
+      'url\uff1a\u8fdc\u7a0b\u8ba2\u9605\u5730\u5740\u3002',
+      'file\uff1a\u672c\u5730 YAML \u6216 URI \u5217\u8868\u6587\u4ef6\u3002'
     ],
     activeField: 0,
-    submitText: 'Enter 提交  ←/→ 切换选项  Tab/上下切换字段  Esc 取消'
+    submitText: 'Enter \u5bfc\u5165 | Tab/\u4e0a\u4e0b\u5207\u6362\u5b57\u6bb5 | Esc \u53d6\u6d88'
   };
 }
 
-export function createPortModal(snapshot) {
-  return {
-    type: 'set-ports',
-    title: '设置端口',
-    prompt: '修改 HTTP / SOCKS / API 端口。保存后会重写受管配置。',
-    fields: [
-      { key: 'http', label: 'HTTP', value: getFieldValue(snapshot, 'http', '17890'), placeholder: '17890' },
-      { key: 'socks', label: 'SOCKS', value: getFieldValue(snapshot, 'socks', '17891'), placeholder: '17891' },
-      { key: 'api', label: 'API', value: getFieldValue(snapshot, 'api', '19090'), placeholder: '19090' }
-    ],
-    notes: [
-      '如发生冲突，doctor 会显示新的推荐端口',
-      '正式服务器建议保持一组固定端口，方便运维'
-    ],
-    activeField: 0,
-    submitText: 'Enter 保存  Tab/上下切换字段  Esc 取消'
-  };
+export function createPortModal(snapshot, proxyMode = resolveProxyMode(snapshot)) {
+  return buildPortModalBase(
+    'set-ports',
+    '\u7aef\u53e3\u4e0e\u6a21\u5f0f',
+    '\u8bbe\u7f6e\u5f53\u524d\u4ee3\u7406\u7aef\u53e3\u6a21\u5f0f\u4e0e\u76d1\u542c\u7aef\u53e3\u3002',
+    snapshot,
+    proxyMode
+  );
 }
 
-export function createInitModal(snapshot) {
-  return {
-    type: 'init-runtime',
-    title: '初始化运行目录',
-    prompt: `当前模式: ${snapshot.status.mode}。先确认端口，再初始化受管 mihomo 环境。`,
-    fields: [
-      { key: 'http', label: 'HTTP', value: getFieldValue(snapshot, 'http', '17890'), placeholder: '17890' },
-      { key: 'socks', label: 'SOCKS', value: getFieldValue(snapshot, 'socks', '17891'), placeholder: '17891' },
-      { key: 'api', label: 'API', value: getFieldValue(snapshot, 'api', '19090'), placeholder: '19090' }
-    ],
-    notes: [
-      'init 会准备运行目录、mihomo、配置文件和订阅存储',
-      'Linux 服务器建议先 init，再装 bashrc 集成'
-    ],
-    activeField: 0,
-    submitText: 'Enter 初始化  Tab/上下切换字段  Esc 取消'
-  };
+export function createInitModal(snapshot, proxyMode = resolveProxyMode(snapshot)) {
+  return buildPortModalBase(
+    'init-runtime',
+    '\u521d\u59cb\u5316\u8fd0\u884c\u73af\u5883',
+    `\u5f53\u524d\u8fd0\u884c\u6a21\u5f0f\uff1a${snapshot.status.mode}\u3002\u521d\u59cb\u5316\u4f1a\u51c6\u5907\u8fd0\u884c\u76ee\u5f55\u3001mihomo\u3001\u8ba2\u9605\u5b58\u50a8\u4e0e\u53d7\u7ba1\u914d\u7f6e\u3002`,
+    snapshot,
+    proxyMode
+  );
+}
+
+export function rebuildPortModal(modal, snapshot, proxyMode) {
+  const nextMode = resolveProxyMode(proxyMode);
+  const currentValues = getCurrentFieldValues(modal);
+  const next = modal.type === 'init-runtime'
+    ? createInitModal(snapshot, nextMode)
+    : createPortModal(snapshot, nextMode);
+  next.fields = buildPortFields(snapshot, nextMode, currentValues);
+  next.activeField = Math.min(modal.activeField || 0, Math.max(0, next.fields.length - 1));
+  return next;
 }
 
 export function createDeleteSubscriptionModal(subscription) {
   return {
     type: 'confirm-remove-sub',
-    title: '确认删除订阅',
-    prompt: `即将删除订阅「${subscription.displayName}」。`,
+    title: '\u786e\u8ba4\u5220\u9664\u8ba2\u9605',
+    prompt: `\u5373\u5c06\u5220\u9664\u8ba2\u9605\u201c${subscription.displayName}\u201d\u3002`,
     fields: [],
     notes: [
-      `来源: ${subscription.source}`,
-      `缓存文件: ${subscription.cachePath}`,
-      `Provider 文件: ${subscription.providerPath}`,
-      '确认后会移除订阅记录和对应缓存文件'
+      `\u6765\u6e90\uff1a${subscription.source}`,
+      `\u7f13\u5b58\u6587\u4ef6\uff1a${subscription.cachePath}`,
+      `Provider \u6587\u4ef6\uff1a${subscription.providerPath}`,
+      subscription.enabled
+        ? '\u8fd9\u662f\u5f53\u524d\u6fc0\u6d3b\u8ba2\u9605\uff1b\u5220\u9664\u540e\u4f1a\u81ea\u52a8\u5207\u6362\u5230\u4e0b\u4e00\u6761\u53ef\u7528\u8ba2\u9605\u3002'
+        : '\u5220\u9664\u540e\u4f1a\u79fb\u9664\u8ba2\u9605\u8bb0\u5f55\u548c\u5bf9\u5e94\u7f13\u5b58\u6587\u4ef6\u3002'
     ],
     activeField: 0,
     subscriptionId: subscription.id,
-    submitText: 'Enter 确认删除  Esc 取消'
+    submitText: 'Enter \u786e\u8ba4\u5220\u9664 | Esc \u53d6\u6d88'
   };
 }
 
 export function createInitProgressModal(snapshot) {
   return {
     type: 'init-progress',
-    title: '初始化进行中',
-    prompt: `当前模式: ${snapshot.status.mode}。正在准备受管 mihomo 环境。`,
+    title: '\u521d\u59cb\u5316\u8fdb\u5ea6',
+    prompt: `\u5f53\u524d\u8fd0\u884c\u6a21\u5f0f\uff1a${snapshot.status.mode}\u3002\u6b63\u5728\u51c6\u5907\u8fd0\u884c\u73af\u5883\u4e0e\u53d7\u7ba1\u914d\u7f6e\u3002`,
     fields: [],
     notes: [],
     activeField: 0,
     steps: [],
-    submitText: '初始化完成后按 Esc 关闭'
+    submitText: '\u521d\u59cb\u5316\u5b8c\u6210\u540e\u6309 Esc \u5173\u95ed'
   };
 }
 
 export function createShellInstallModal(snapshot) {
   return {
     type: 'shell-install',
-    title: '安装 Shell 集成',
-    prompt: '为当前 Linux bash 账户写入受管 .bashrc 片段，让新会话直接运行 codex 也能复用已启动的 VPN。',
+    title: '\u5b89\u88c5 Shell \u96c6\u6210',
+    prompt: '\u628a\u53d7\u7ba1 bashrc \u7247\u6bb5\u5199\u5165\u670d\u52a1\u5668\u73af\u5883\uff0c\u4fbf\u4e8e\u540c\u8d26\u53f7\u4f1a\u8bdd\u590d\u7528\u5f53\u524d VPN\u3002',
     fields: [
-      { key: 'bashrcPath', label: '.bashrc 路径', value: snapshot.status.shellIntegration?.bashrcPath || '', placeholder: '~/.bashrc（留空使用默认）' }
+      { key: 'bashrcPath', label: '.bashrc \u8def\u5f84', value: snapshot.status.shellIntegration?.bashrcPath || '', placeholder: '~/.bashrc' }
     ],
     notes: [
-      'A 会话启动 mihomo 后，B 会话可直接运行 codex',
-      '只覆盖 vpnctl 自己的受管块，不改其它 bash 配置'
+      '\u53ea\u8986\u76d6 vpnctl \u81ea\u5df1\u7684\u53d7\u7ba1\u5757\uff0c\u4e0d\u6539\u5176\u5b83 bash \u914d\u7f6e\u3002',
+      '\u5b89\u88c5\u540e\u4f1a\u63d0\u4f9b vpnctl-proxy-on/off/status \u4e0e codex \u4ee3\u7406\u5c01\u88c5\u3002'
     ],
     activeField: 0,
-    submitText: 'Enter 安装  Tab 切换字段  Esc 取消'
+    submitText: 'Enter \u5b89\u88c5 | Tab \u5207\u6362\u5b57\u6bb5 | Esc \u53d6\u6d88'
   };
 }
 
@@ -129,98 +227,96 @@ export function buildOverviewGuide(snapshot) {
 
   if (action === 'init-runtime') {
     return [
-      '下一步向导',
-      '1. 按 Enter 或 i 初始化运行目录',
-      '2. 确认 HTTP / SOCKS / API 端口',
-      '3. 界面会显示初始化步骤进度',
-      '4. 初始化完成后继续导入订阅'
+      '\u8fd8\u6ca1\u6709\u51c6\u5907\u597d\u8fd0\u884c\u73af\u5883\u3002',
+      '1. \u6309 Enter \u6216 i \u6253\u5f00\u521d\u59cb\u5316\u5411\u5bfc\u3002',
+      '2. \u9ed8\u8ba4\u4f7f\u7528 mix \u6a21\u5f0f\uff0c\u53ea\u5360\u7528 mixed + api \u4e24\u4e2a\u7aef\u53e3\u3002',
+      '3. \u5982\u9700\u517c\u5bb9\u65e7\u4e60\u60ef\uff0c\u518d\u5207\u5230 separate \u6a21\u5f0f\u3002',
+      '4. \u521d\u59cb\u5316\u5b8c\u6210\u540e\u7ee7\u7eed\u5bfc\u5165\u8ba2\u9605\u3002'
     ];
   }
 
   if (action === 'add-sub') {
     return [
-      '下一步向导',
-      '1. 按 Enter 或 a 添加 URL 或 YAML 订阅',
-      '2. 完成后执行同步生成 provider',
-      '3. 同步成功后再启动 mihomo'
+      '\u73b0\u5728\u5148\u5bfc\u5165\u4e00\u4e2a\u8ba2\u9605\u3002',
+      '1. \u6309 Enter \u6216 a \u6dfb\u52a0 URL \u6216 YAML \u8ba2\u9605\u3002',
+      '2. \u5bfc\u5165\u540e\u4f1a\u751f\u6210 provider\u3002',
+      '3. \u7136\u540e\u540c\u6b65\u5e76\u542f\u52a8 mihomo\u3002'
     ];
   }
 
   if (action === 'sync') {
     return [
-      '下一步向导',
-      '1. 按 Enter 或 y 同步订阅',
-      '2. provider 生成后进入节点页检查节点',
-      '3. 再启动 mihomo 进行实际连接'
+      '\u8ba2\u9605\u5df2\u7ecf\u5b58\u5728\uff0c\u4f46\u8fd8\u6ca1\u751f\u6210 provider\u3002',
+      '1. \u6309 Enter \u6216 y \u540c\u6b65\u5f53\u524d\u6fc0\u6d3b\u8ba2\u9605\u3002',
+      '2. \u751f\u6210 provider \u540e\u518d\u53bb\u8282\u70b9\u9875\u5207\u6362\u8282\u70b9\u3002',
+      '3. \u82e5 mihomo \u6b63\u5728\u8fd0\u884c\uff0c\u4f1a\u81ea\u52a8\u70ed\u91cd\u8f7d\u6216\u91cd\u542f\u3002'
     ];
   }
 
   if (action === 'start') {
     return [
-      '下一步向导',
-      '1. 按 Enter 或 s 启动 mihomo',
-      '2. 启动后节点延迟会逐步显示',
-      '3. 然后安装 shell 集成给新会话复用'
+      '\u914d\u7f6e\u5df2\u7ecf\u51c6\u5907\u597d\uff0c\u4f46 mihomo \u8fd8\u6ca1\u542f\u52a8\u3002',
+      '1. \u6309 Enter \u6216 s \u542f\u52a8 mihomo\u3002',
+      '2. \u542f\u52a8\u540e\u518d\u5207\u8282\u70b9\u6216\u6d4b\u901f\u3002',
+      '3. \u5982\u9700\u8de8\u4f1a\u8bdd\u590d\u7528 VPN\uff0c\u53ef\u7ee7\u7eed\u5b89\u88c5 shell \u96c6\u6210\u3002'
     ];
   }
 
   if (action === 'shell-install') {
     return [
-      '下一步向导',
-      '1. 按 Enter 或 b 安装 bashrc 集成',
-      '2. 在服务器执行 source ~/.bashrc',
-      '3. 之后同账户新会话可直接运行 codex'
+      '\u5f53\u524d VPN \u5df2\u53ef\u7528\uff0c\u4f46\u8fd8\u6ca1\u6709\u5b89\u88c5 shell \u590d\u7528\u80fd\u529b\u3002',
+      '1. \u6309 Enter \u6216 b \u5b89\u88c5 bashrc \u7247\u6bb5\u3002',
+      '2. \u6267\u884c source ~/.bashrc\u3002',
+      '3. \u4e4b\u540e\u65b0\u4f1a\u8bdd\u53ef\u4ee5\u76f4\u63a5\u590d\u7528\u5f53\u524d VPN \u8fd0\u884c codex\u3002'
     ];
   }
 
   if (sessionState === 'waiting') {
     return [
-      '服务器复用状态',
-      'Shell 集成已经准备好',
-      '任意一个会话启动 mihomo 后',
-      '其他同账户会话即可直接运行 codex'
+      'Shell \u96c6\u6210\u5df2\u7ecf\u51c6\u5907\u597d\u3002',
+      '\u4efb\u610f\u4e00\u4e2a\u540c\u8d26\u53f7\u4f1a\u8bdd\u5148\u542f\u52a8 mihomo\uff0c',
+      '\u4e4b\u540e\u5176\u4ed6\u540c\u8d26\u53f7\u4f1a\u8bdd\u5c31\u53ef\u4ee5\u76f4\u63a5\u8fd0\u884c codex \u5e76\u590d\u7528 VPN\u3002'
     ];
   }
 
   return [
-    '服务器复用状态',
-    '当前闭环已经就绪',
-    'A 会话启动 mihomo 后',
-    'B 会话可直接运行 codex，无需再次动 VPN'
+    '\u73af\u5883\u5df2\u7ecf\u5c31\u7eea\u3002',
+    '\u53ef\u4ee5\u76f4\u63a5\u8fdb\u5165\u8282\u70b9\u9875\u5207\u6362\u8282\u70b9\u3001\u6267\u884c\u6d4b\u901f\uff0c\u6216\u5728\u65b0\u4f1a\u8bdd\u8fd0\u884c codex\u3002',
+    '\u65b0\u7684\u540c\u8d26\u53f7\u4f1a\u8bdd\u53ef\u4ee5\u76f4\u63a5\u590d\u7528\u5f53\u524d VPN\u3002'
   ];
 }
 
 export function buildShellGuide(snapshot) {
-  const shell = snapshot.status.shellIntegration || {};
-  const sessionReuse = snapshot.status.sessionReuse || {};
+  const shell = snapshot.status.shellIntegration || { installed: false, codexWrapper: false };
+  const sessionReuse = snapshot.status.sessionReuse || { state: 'unknown' };
 
   if (!shell.installed) {
     return [
-      '当前还没有安装 bashrc 集成',
-      '安装后会写入 vpnctl-proxy-on/off/status',
-      '并提供 codex() 与 codexvpn 复用当前 VPN'
+      '\u8fd8\u6ca1\u6709\u5b89\u88c5 bashrc \u7247\u6bb5\u3002',
+      '\u5b89\u88c5\u540e\u4f1a\u63d0\u4f9b vpnctl-proxy-on/off/status\uff0c',
+      '\u540c\u65f6\u63d0\u4f9b codex() \u4e0e codexvpn \u6765\u590d\u7528\u5f53\u524d VPN\u3002'
     ];
   }
 
   if (!shell.codexWrapper) {
     return [
-      'bashrc 受管块已存在，但 Codex 包装器未就绪',
-      '建议重新执行 shell install',
-      '然后 source ~/.bashrc'
+      'bashrc \u5df2\u5b89\u88c5\uff0c\u4f46 Codex \u4ee3\u7406\u5c01\u88c5\u4e0d\u5b8c\u6574\u3002',
+      '\u53ef\u91cd\u65b0\u6267\u884c shell \u5b89\u88c5\u4ee5\u8865\u5168\u7247\u6bb5\uff0c',
+      '\u5b8c\u6210\u540e\u518d source ~/.bashrc\u3002'
     ];
   }
 
   if (sessionReuse.state === 'waiting') {
     return [
-      'Shell 已准备好，正在等待 mihomo 启动',
-      'A 会话先启动 mihomo',
-      'B 会话随后可直接运行 codex'
+      'Shell \u96c6\u6210\u5df2\u7ecf\u5c31\u7eea\uff0c\u6b63\u5728\u7b49\u5f85\u67d0\u4e2a\u4f1a\u8bdd\u5148\u542f\u52a8 mihomo\u3002',
+      'A \u4f1a\u8bdd\u542f\u52a8 mihomo\u3002',
+      'B \u4f1a\u8bdd\u76f4\u63a5\u8fd0\u884c codex\u3002'
     ];
   }
 
   return [
-    '同账户多会话复用已就绪',
-    'A 会话保持 mihomo 运行',
-    'B 会话直接运行 codex 即可'
+    'Shell \u96c6\u6210\u5df2\u7ecf\u5b8c\u6574\u53ef\u7528\u3002',
+    'A \u4f1a\u8bdd\u4fdd\u6301 mihomo \u8fd0\u884c\u3002',
+    'B \u4f1a\u8bdd\u76f4\u63a5\u8fd0\u884c codex\u3002'
   ];
 }

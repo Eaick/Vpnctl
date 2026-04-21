@@ -17,10 +17,9 @@ export async function fileExists(filepath) {
   }
 }
 
-export async function readPid() {
-  const config = createConfig();
+export async function readPid(currentConfig = createConfig()) {
   try {
-    const raw = await fs.readFile(config.pidFile, 'utf8');
+    const raw = await fs.readFile(currentConfig.pidFile, 'utf8');
     const pid = Number(raw.trim());
     return Number.isInteger(pid) ? pid : null;
   } catch {
@@ -38,33 +37,30 @@ export async function isPidAlive(pid) {
   }
 }
 
-export async function writePid(pid) {
-  const config = createConfig();
+export async function writePid(pid, currentConfig = createConfig()) {
   await ensureLogDir();
-  await fs.writeFile(config.pidFile, String(pid), 'utf8');
+  await fs.writeFile(currentConfig.pidFile, String(pid), 'utf8');
 }
 
-export async function removePidFile() {
-  const config = createConfig();
-  await fs.rm(config.pidFile, { force: true });
-  await removeRuntimeLock(config);
+export async function removePidFile(currentConfig = createConfig()) {
+  await fs.rm(currentConfig.pidFile, { force: true });
+  await removeRuntimeLock(currentConfig);
 }
 
-export async function startDetached() {
-  const config = createConfig();
+export async function startDetached(currentConfig = createConfig()) {
   await ensureLogDir();
 
-  const out = await fs.open(config.logFile, 'a');
-  const err = await fs.open(config.logFile, 'a');
+  const out = await fs.open(currentConfig.logFile, 'a');
+  const err = await fs.open(currentConfig.logFile, 'a');
 
-  const child = spawn(config.mihomoBin, ['-d', config.mihomoDir], {
+  const child = spawn(currentConfig.mihomoBin, ['-d', currentConfig.mihomoDir], {
     detached: true,
     stdio: ['ignore', out.fd, err.fd]
   });
 
   child.unref();
-  await writePid(child.pid);
-  await writeRuntimeLock(config, child.pid);
+  await writePid(child.pid, currentConfig);
+  await writeRuntimeLock(currentConfig, child.pid);
   await out.close();
   await err.close();
   return child.pid;

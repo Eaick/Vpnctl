@@ -35,15 +35,16 @@ export async function writeRuntimeLock(currentConfig = createConfig(), pid = nul
   const payload = {
     pid,
     mode: currentConfig.mode,
+    proxyMode: currentConfig.proxyMode,
     root: normalize(currentConfig.paths.root),
     lockFile: normalize(currentConfig.lockFile),
     writtenAt: new Date().toISOString(),
     portSource: currentConfig.portSource,
-    ports: {
-      http: ports.http.port,
-      socks: ports.socks.port,
-      api: ports.api.port
-    }
+    ports: Object.fromEntries(
+      Object.entries(ports)
+        .filter(([key, value]) => key !== 'mode' && value?.port)
+        .map(([key, value]) => [key, value.port])
+    )
   };
 
   await fs.mkdir(path.dirname(currentConfig.lockFile), { recursive: true });

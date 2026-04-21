@@ -14,6 +14,7 @@ import {
   listBusyEndpoints,
   findAvailablePortPlan,
   buildPortEnvSnippet,
+  getPortKeys,
   getPortSourceLabel
 } from './lib/ports.mjs';
 import {
@@ -23,8 +24,7 @@ import {
   getCurrentNode,
   chooseNode,
   testProxyDelay,
-  switchByCountry,
-  isApiAlive
+  switchByCountry
 } from './lib/mihomo.mjs';
 import {
   readPid,
@@ -58,17 +58,50 @@ import {
 import { listKnownRuntimeLocks } from './lib/runtime-lock.mjs';
 import { formatInitProgressLine } from './lib/init-progress.mjs';
 import { applyManagedConfigToRuntime } from './lib/runtime-apply.mjs';
+import { getManagedRuntimeStatus } from './lib/managed-runtime.mjs';
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function normalizePortArgs({ httpPort, socksPort, apiPort } = {}) {
+function resolveRequestedProxyMode({ proxyMode, mixedPort, httpPort, socksPort } = {}) {
+  if (proxyMode === 'mix' || proxyMode === 'separate') return proxyMode;
+  if (mixedPort && !httpPort && !socksPort) return 'mix';
+  if ((httpPort || socksPort) && !mixedPort) return 'separate';
+  return undefined;
+}
+
+function normalizePortArgs({ mixedPort, httpPort, socksPort, apiPort } = {}) {
   return {
+    ...(mixedPort ? { mixed: Number(mixedPort) } : {}),
     ...(httpPort ? { http: Number(httpPort) } : {}),
     ...(socksPort ? { socks: Number(socksPort) } : {}),
     ...(apiPort ? { api: Number(apiPort) } : {})
   };
+}
+
+function renderProxyLines(currentConfig) {
+  if (currentConfig.proxyMode === 'mix') {
+    return [
+      `mixed proxy (http): ${currentConfig.httpProxy}`,
+      `mixed proxy (socks5): ${currentConfig.socksProxy}`
+    ];
+  }
+
+  return [
+    `http proxy: ${currentConfig.httpProxy}`,
+    `socks proxy: ${currentConfig.socksProxy}`
+  ];
+}
+
+function renderPortAvailabilityLines(plan) {
+  return getPortKeys(plan.mode).map((key) => `${key} port free: ${plan[key].available}`);
+}
+
+function formatRuntimeLockPorts(lock) {
+  return Object.entries(lock.ports || {})
+    .map(([key, value]) => `${key}=${value}`)
+    .join(' ');
 }
 
 async function buildPortConflictMessage(currentConfig, { apiAlive = false } = {}) {
@@ -97,6 +130,16 @@ async function buildPortConflictMessage(currentConfig, { apiAlive = false } = {}
   return lines.join('\n');
 }
 
+async function buildExternalApiMessage(currentConfig) {
+  const details = await buildPortConflictMessage(currentConfig);
+  return [
+    '当前配置的 mihomo API 端口已经有响应，但它不属于当前账户的受管运行态。',
+    `API 地址: ${currentConfig.mihomoApi}`,
+    '',
+    details || '请先更换 API 端口，或停止其他账户正在运行的实例。'
+  ].join('\n');
+}
+
 function renderSubscriptionLine(item) {
   const synced = item.lastSyncedAt || 'never';
   return `- ${item.displayName} | ${item.enabled ? 'active' : 'resting'} | ${item.type} | ${item.id} | nodes:${item.nodeCount || 0} | sync:${item.syncStatus || 'pending'} | updated:${synced}`;
@@ -110,16 +153,25 @@ async function writeAndApply(currentConfig) {
 export async function cmdInit({
   mode = 'user',
   skipDownload = false,
+  proxyMode,
+  mixedPort,
   httpPort,
   socksPort,
   apiPort
 } = {}) {
   title(mode === 'dev' ? 'Initialize VPNCTL sandbox' : 'Initialize VPNCTL');
   const seenSteps = new Set();
+  const requestedProxyMode = resolveRequestedProxyMode({
+    proxyMode,
+    mixedPort,
+    httpPort,
+    socksPort
+  }) || 'mix';
   const result = await initializeRuntimeWithOptions({
     mode,
     skipDownload,
-    ports: normalizePortArgs({ httpPort, socksPort, apiPort }),
+    proxyMode: requestedProxyMode,
+    ports: normalizePortArgs({ mixedPort, httpPort, socksPort, apiPort }),
     onProgress(step) {
       if (step.status === 'done' || step.status === 'failed') {
         console.log(formatInitProgressLine(step));
@@ -131,6 +183,7 @@ export async function cmdInit({
   });
 
   console.log(`mode: ${result.config.mode}`);
+  console.log(`proxy mode: ${result.config.proxyMode}`);
   console.log(`root: ${result.config.paths.root}`);
   console.log(`mihomo bin: ${result.config.mihomoBin}`);
   console.log(`config file: ${result.config.generatedConfigFile}`);
@@ -175,29 +228,26 @@ export async function cmdStart() {
   await ensureSubscriptionStore(currentConfig);
   await writeManagedConfig(currentConfig);
 
-  const pid = await readPid();
-  const apiAlive = await isApiAlive();
-  const pidAlive = await isPidAlive(pid);
+  const runtimeStatus = await getManagedRuntimeStatus(currentConfig);
 
-  if (apiAlive && pidAlive) {
-    ok(`mihomo already running with pid=${pid}`);
+  if (runtimeStatus.managedApiAlive && runtimeStatus.pidAlive) {
+    ok(`mihomo already running with pid=${runtimeStatus.pid}`);
     return;
   }
 
-  if (apiAlive && !pidAlive) {
-    warn('mihomo API is responding but pid file is stale.');
-    return;
+  if (runtimeStatus.foreignApiAlive) {
+    throw new Error(await buildExternalApiMessage(currentConfig));
   }
 
-  const portConflictMessage = await buildPortConflictMessage(currentConfig, { apiAlive });
+  const portConflictMessage = await buildPortConflictMessage(currentConfig, { apiAlive: false });
   if (portConflictMessage) {
     throw new Error(portConflictMessage);
   }
 
-  const newPid = await startDetached();
+  const newPid = await startDetached(currentConfig);
   await sleep(1200);
 
-  if (await isApiAlive()) {
+  if ((await getManagedRuntimeStatus(currentConfig)).managedApiAlive) {
     ok(`mihomo started with pid=${newPid}`);
   } else {
     warn(`mihomo did not become ready. Check logs: ${await tailLogHint()}`);
@@ -241,22 +291,24 @@ export async function cmdStatus() {
   const currentConfig = createConfig();
   title('Runtime status');
   const subscriptions = await loadSubscriptions(currentConfig);
-  const apiAlive = await isApiAlive();
-  const pid = await readPid();
-  const pidAlive = await isPidAlive(pid);
+  const runtimeStatus = await getManagedRuntimeStatus(currentConfig);
 
   console.log(`mode: ${currentConfig.mode}`);
   console.log(`initialized: ${currentConfig.isInitialized}`);
-  console.log(`api alive: ${apiAlive}`);
-  console.log(`pid: ${pid || 'none'}`);
-  console.log(`pid alive: ${pidAlive}`);
+  console.log(`api alive: ${runtimeStatus.managedApiAlive}`);
+  console.log(`api reachable: ${runtimeStatus.apiReachable}`);
+  console.log(`foreign api alive: ${runtimeStatus.foreignApiAlive}`);
+  console.log(`pid: ${runtimeStatus.pid || 'none'}`);
+  console.log(`pid alive: ${runtimeStatus.pidAlive}`);
   console.log(`default group: ${currentConfig.defaultGroup}`);
-  console.log(`http proxy: ${currentConfig.httpProxy}`);
-  console.log(`socks proxy: ${currentConfig.socksProxy}`);
+  console.log(`proxy mode: ${currentConfig.proxyMode}`);
+  for (const line of renderProxyLines(currentConfig)) {
+    console.log(line);
+  }
   console.log(`port source: ${getPortSourceLabel(currentConfig.portSource)}`);
   console.log(`subscriptions: ${subscriptions.length}`);
 
-  if (apiAlive) {
+  if (runtimeStatus.managedApiAlive) {
     const version = await getVersion();
     console.log(`version: ${JSON.stringify(version)}`);
     const current = await getCurrentNode(currentConfig.defaultGroup);
@@ -320,7 +372,7 @@ export async function cmdDoctor() {
   title('Doctor');
   const runtime = summarizeRuntime(currentConfig);
   const subscriptions = await loadSubscriptions(currentConfig);
-  const apiAlive = await isApiAlive();
+  const runtimeStatus = await getManagedRuntimeStatus(currentConfig);
   const migration = await summarizeMigrationState(currentConfig);
   const shellIntegration = await detectShellIntegration().catch(() => ({
     installed: false,
@@ -341,15 +393,17 @@ export async function cmdDoctor() {
   console.log(`lock file: ${currentConfig.lockFile}`);
   console.log(`default group: ${currentConfig.defaultGroup}`);
   console.log(`theme: ${currentConfig.theme}`);
-  console.log(`http proxy: ${currentConfig.httpProxy}`);
-  console.log(`socks proxy: ${currentConfig.socksProxy}`);
+  console.log(`proxy mode: ${currentConfig.proxyMode}`);
+  for (const line of renderProxyLines(currentConfig)) {
+    console.log(line);
+  }
   console.log(`subscriptions: ${subscriptions.length}`);
   console.log(`port source: ${getPortSourceLabel(currentConfig.portSource)}`);
   console.log(`shell integration: ${shellIntegration.installed}`);
   console.log(`shell integration path: ${shellIntegration.bashrcPath || 'none'}`);
   console.log(`codex wrapper: ${shellIntegration.codexWrapper}`);
   const sessionReuse = shellIntegration.installed && shellIntegration.codexWrapper
-    ? (apiAlive ? 'ready' : 'waiting-for-mihomo')
+    ? (runtimeStatus.managedApiAlive ? 'ready' : 'waiting-for-mihomo')
     : 'not-ready';
   console.log(`session reuse: ${sessionReuse}`);
   console.log(`old install detected: ${migration.oldInstallDetected}`);
@@ -361,20 +415,26 @@ export async function cmdDoctor() {
   const binaryExists = await fileExists(currentConfig.mihomoBin);
   console.log(`binary exists: ${binaryExists}`);
   console.log(`log exists: ${await fileExists(currentConfig.logFile)}`);
-  console.log(`api alive: ${apiAlive}`);
+  console.log(`api alive: ${runtimeStatus.managedApiAlive}`);
+  console.log(`api reachable: ${runtimeStatus.apiReachable}`);
+  console.log(`foreign api alive: ${runtimeStatus.foreignApiAlive}`);
 
   if (!binaryExists) {
     warn(getMihomoInstallHint());
   }
 
   const probedPorts = await probeConfiguredPortPlan(currentConfig);
-  console.log(`api port free: ${probedPorts.api.available}`);
-  console.log(`http port free: ${probedPorts.http.available}`);
-  console.log(`socks port free: ${probedPorts.socks.available}`);
+  for (const line of renderPortAvailabilityLines(probedPorts)) {
+    console.log(line);
+  }
 
-  const portConflictMessage = await buildPortConflictMessage(currentConfig, { apiAlive });
+  const portConflictMessage = await buildPortConflictMessage(currentConfig, { apiAlive: runtimeStatus.managedApiAlive });
   if (portConflictMessage) {
     warn(portConflictMessage);
+  }
+
+  if (runtimeStatus.foreignApiAlive) {
+    warn(await buildExternalApiMessage(currentConfig));
   }
 
   if (sessionReuse === 'not-ready') {
@@ -386,7 +446,7 @@ export async function cmdDoctor() {
   }
 
   for (const lock of runtimeLocks) {
-    console.log(`lock: ${lock.mode} | ${lock.root} | http=${lock.ports.http} socks=${lock.ports.socks} api=${lock.ports.api}`);
+    console.log(`lock: ${lock.mode}/${lock.proxyMode || 'separate'} | ${lock.root} | ${formatRuntimeLockPorts(lock)}`);
   }
 
   for (const item of subscriptions) {
@@ -472,17 +532,26 @@ export async function cmdRemoveSub({ id } = {}) {
   info(applied.message);
 }
 
-export async function cmdConfigSetPorts({ http, socks, api } = {}) {
+export async function cmdConfigSetPorts({ proxyMode, mixed, http, socks, api } = {}) {
   title('Set ports');
+  const requestedProxyMode = resolveRequestedProxyMode({
+    proxyMode,
+    mixedPort: mixed,
+    httpPort: http,
+    socksPort: socks
+  });
   const result = await setConfiguredPorts({
     ports: {
+      ...(mixed ? { mixed } : {}),
       ...(http ? { http } : {}),
       ...(socks ? { socks } : {}),
       ...(api ? { api } : {})
     },
+    ...(requestedProxyMode ? { proxyMode: requestedProxyMode } : {}),
     reason: 'custom'
   });
   await writeManagedConfig(result.config);
+  console.log(`proxy mode: ${result.config.proxyMode}`);
   console.log(`port source: ${getPortSourceLabel(result.portSource)}`);
   console.log(result.portSnippet);
 }

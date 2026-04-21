@@ -5,34 +5,34 @@ import { fileExists } from './process.mjs';
 function buildInstallSteps(platform) {
   if (platform === 'win32') {
     return [
-      'Windows 本机建议先走开发沙箱，不要直接复用你现有 Clash 或 mihomo 的目录。',
-      '本地测试优先运行 vpnctl dev init；确认稳定后再运行 vpnctl init。',
-      '如果 7890/7891 已被 Clash 占用，请为 mihomo 单独准备端口，并同步设置 MIHOMO_API、MIHOMO_HTTP_PROXY、MIHOMO_SOCKS_PROXY。'
+      'Windows 环境建议先在 .sandbox 里执行 vpnctl dev init，再确认正式配置。',
+      '默认推荐 mix 模式，只占用 mixed + api 两个端口。',
+      '如果 7890/7891 已被其它 Clash 客户端占用，请为 mihomo 单独准备端口。'
     ];
   }
 
   if (platform === 'darwin') {
     return [
-      '当前内核自动安装主要面向 Windows x64 和 Linux x64；macOS 建议先手动准备内核。',
-      '如果需要正式运行目录，请先执行 vpnctl init。',
-      '也可以先用开发模式验证流程，再决定是否进入正式安装。'
+      '当前版本正式支持 Windows x64 与 Linux x64。',
+      'macOS 可以先在项目环境里验证流程，再自行准备 mihomo 二进制。',
+      '如果端口冲突，请切到 mix 模式或手动指定新的端口。'
     ];
   }
 
   return [
-    'Linux/SSH 服务器建议先执行 vpnctl init，确保运行目录、端口和订阅存储已准备好。',
-    '如果你只是做本地演练，可以优先执行 vpnctl dev init。',
-    '如果内核路径不是默认位置，也可以通过 MIHOMO_BIN 指向现有二进制。'
+    'Linux/SSH 服务器建议先执行 vpnctl init，确保运行目录、端口与订阅存储已准备好。',
+    '默认推荐 mix 模式，减少端口占用与冲突概率。',
+    '如需自定义 mihomo 路径，可提前设置 MIHOMO_BIN。'
   ];
 }
 
 export function getMihomoInstallHint() {
   const config = createConfig();
   const lines = [
-    `未找到 mihomo 二进制: ${config.mihomoBin}`,
+    `当前 mihomo 路径: ${config.mihomoBin}`,
     config.mode === 'dev'
-      ? '当前处于开发沙箱模式，建议先运行 vpnctl dev init。'
-      : '当前处于正式安装模式，建议先运行 vpnctl init。',
+      ? '当前处于开发沙箱模式，建议先执行 vpnctl dev init。'
+      : '当前处于正式安装模式，建议先执行 vpnctl init。',
     ...buildInstallSteps(process.platform)
   ];
 

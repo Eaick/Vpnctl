@@ -7,6 +7,7 @@ import {
   buildPortEnvSnippet,
   findAvailablePortPlan,
   getConfiguredPortPlan,
+  getPortKeys,
   normalizePortOverrides,
   probePortPlan
 } from './ports.mjs';
@@ -33,20 +34,27 @@ function getPlatformAssetMatchers(platform, arch) {
   return [];
 }
 
+function extractStoredPorts(portPlan) {
+  const ports = {};
+  for (const key of getPortKeys(portPlan.mode)) {
+    ports[key] = portPlan[key].port;
+  }
+  return ports;
+}
+
 function buildManagedState(currentConfig, portPlan, asset = null) {
   return {
     mode: currentConfig.mode,
     initializedAt: currentConfig.installState?.initializedAt || new Date().toISOString(),
     platform: process.platform,
     arch: process.arch,
+    proxyMode: currentConfig.proxyMode,
     controllerHost: portPlan.api.host,
-    httpHost: portPlan.http.host,
-    socksHost: portPlan.socks.host,
-    ports: {
-      api: portPlan.api.port,
-      http: portPlan.http.port,
-      socks: portPlan.socks.port
-    },
+    proxyHost: portPlan.mode === 'mix' ? portPlan.mixed.host : portPlan.http.host,
+    httpHost: portPlan.mode === 'mix' ? portPlan.mixed.host : portPlan.http.host,
+    socksHost: portPlan.mode === 'mix' ? portPlan.mixed.host : portPlan.socks.host,
+    mixedHost: portPlan.mode === 'mix' ? portPlan.mixed.host : portPlan.http.host,
+    ports: extractStoredPorts(portPlan),
     portSource: currentConfig.portSource || currentConfig.installState?.portSource || 'default',
     defaultGroup: currentConfig.defaultGroup,
     theme: currentConfig.theme,
@@ -198,10 +206,17 @@ function inferPortSource(currentConfig, normalizedPorts, usedFallbackPlan) {
 }
 
 async function resolvePortPlan(currentConfig, normalizedPorts = {}) {
-  const preferredPlan = getConfiguredPortPlan(currentConfig);
-  const preferredProbe = await probePortPlan(preferredPlan);
+  const preferredPlan = Object.keys(normalizedPorts).length
+    ? findAvailablePortPlan(currentConfig, {
+      maxOffset: 0,
+      preferredPorts: normalizedPorts,
+      proxyMode: currentConfig.proxyMode
+    })
+    : probePortPlan(getConfiguredPortPlan(currentConfig));
 
-  if (Object.values(preferredProbe).every((endpoint) => endpoint.available)) {
+  const preferredProbe = await preferredPlan;
+
+  if (preferredProbe && getPortKeys(currentConfig.proxyMode).every((key) => preferredProbe[key].available)) {
     return {
       plan: preferredProbe,
       portSource: inferPortSource(currentConfig, normalizedPorts, false)
@@ -210,7 +225,8 @@ async function resolvePortPlan(currentConfig, normalizedPorts = {}) {
 
   const plan = await findAvailablePortPlan(currentConfig, {
     maxOffset: currentConfig.mode === 'dev' ? 8 : 5,
-    preferredPorts: normalizedPorts
+    preferredPorts: normalizedPorts,
+    proxyMode: currentConfig.proxyMode
   });
 
   return {
@@ -227,6 +243,7 @@ export async function initializeRuntimeWithOptions({
   mode = 'user',
   skipDownload = false,
   ports = {},
+  proxyMode = 'mix',
   theme,
   defaultGroup,
   onProgress
@@ -236,6 +253,7 @@ export async function initializeRuntimeWithOptions({
   try {
     emitProgress(onProgress, 'validate', 'running');
     const currentConfig = createConfig(mode, {
+      proxyMode,
       ports: normalizedPorts,
       theme,
       defaultGroup
@@ -273,11 +291,8 @@ export async function initializeRuntimeWithOptions({
     emitProgress(onProgress, 'install-state', 'running');
     const installState = buildManagedState(
       createConfig(mode, {
-        ports: {
-          http: resolved.plan.http.port,
-          socks: resolved.plan.socks.port,
-          api: resolved.plan.api.port
-        },
+        proxyMode: currentConfig.proxyMode,
+        ports: extractStoredPorts(resolved.plan),
         theme,
         defaultGroup,
         portSource: resolved.portSource
@@ -324,11 +339,14 @@ export async function initializeRuntimeWithOptions({
 export async function setConfiguredPorts({
   mode,
   ports = {},
+  proxyMode,
   reason = 'custom'
 } = {}) {
   const currentConfig = createConfig(mode);
+  const nextProxyMode = proxyMode || currentConfig.proxyMode;
   const normalizedPorts = normalizePortOverrides(ports);
   const preferredConfig = createConfig(currentConfig.mode, {
+    proxyMode: nextProxyMode,
     ports: normalizedPorts,
     portSource: reason
   });
@@ -340,11 +358,8 @@ export async function setConfiguredPorts({
 
   const nextState = buildManagedState(
     createConfig(currentConfig.mode, {
-      ports: {
-        http: resolved.plan.http.port,
-        socks: resolved.plan.socks.port,
-        api: resolved.plan.api.port
-      },
+      proxyMode: nextProxyMode,
+      ports: extractStoredPorts(resolved.plan),
       portSource: resolved.portSource || reason
     }),
     resolved.plan
@@ -389,6 +404,7 @@ export async function cleanSandboxRuntime() {
 export function summarizeRuntime(currentConfig = createConfig()) {
   return {
     mode: currentConfig.mode,
+    proxyMode: currentConfig.proxyMode,
     root: normalizePath(currentConfig.paths.root),
     mihomoBin: normalizePath(currentConfig.mihomoBin),
     configDir: normalizePath(currentConfig.configDir),

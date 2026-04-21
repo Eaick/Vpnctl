@@ -18,6 +18,7 @@ test.after(async () => {
 test('initializeRuntime creates dev sandbox layout without downloading', async () => {
   const result = await initializeRuntime({ mode: 'dev', skipDownload: true });
   assert.equal(result.config.mode, 'dev');
+  assert.equal(result.config.proxyMode, 'mix');
   await assert.doesNotReject(fs.access(result.config.installFile));
   await assert.doesNotReject(fs.access(result.config.mihomoBin));
   await assert.doesNotReject(fs.access(result.config.configDir));
@@ -30,9 +31,26 @@ test('cleanSandboxRuntime removes sandbox tree', async () => {
   await assert.rejects(fs.access(sandboxRoot));
 });
 
-test('initializeRuntimeWithOptions persists custom dev ports', async () => {
+test('initializeRuntimeWithOptions persists custom mix ports by default', async () => {
   const result = await initializeRuntimeWithOptions({
     mode: 'dev',
+    skipDownload: true,
+    ports: {
+      mixed: 27890,
+      api: 29090
+    }
+  });
+
+  assert.equal(result.installState.proxyMode, 'mix');
+  assert.equal(result.installState.ports.mixed, 27890);
+  assert.equal(result.installState.ports.api, 29090);
+  assert.equal(result.installState.portSource, 'custom');
+});
+
+test('initializeRuntimeWithOptions supports separate mode', async () => {
+  const result = await initializeRuntimeWithOptions({
+    mode: 'dev',
+    proxyMode: 'separate',
     skipDownload: true,
     ports: {
       http: 27890,
@@ -41,10 +59,10 @@ test('initializeRuntimeWithOptions persists custom dev ports', async () => {
     }
   });
 
+  assert.equal(result.installState.proxyMode, 'separate');
   assert.equal(result.installState.ports.http, 27890);
   assert.equal(result.installState.ports.socks, 27891);
   assert.equal(result.installState.ports.api, 29090);
-  assert.equal(result.installState.portSource, 'custom');
 });
 
 test('initializeRuntimeWithOptions emits ordered progress steps', async () => {

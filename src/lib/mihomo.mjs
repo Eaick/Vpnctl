@@ -12,12 +12,11 @@ export function cleanCandidates(names = []) {
   return names.filter((name) => !HIDDEN_NODE_PATTERNS.some((re) => re.test(name)));
 }
 
-export async function api(path, options = {}) {
-  const config = createConfig();
-  const res = await fetch(`${config.mihomoApi}${path}`, {
+export async function api(path, options = {}, currentConfig = createConfig()) {
+  const res = await fetch(`${currentConfig.mihomoApi}${path}`, {
     ...options,
     headers: {
-      ...authHeaders({ json: options.body !== undefined, config }),
+      ...authHeaders({ json: options.body !== undefined, config: currentConfig }),
       ...(options.headers || {})
     }
   });
@@ -32,37 +31,37 @@ export async function api(path, options = {}) {
   return res.text();
 }
 
-export async function isApiAlive() {
+export async function isApiAlive(currentConfig = createConfig()) {
   try {
-    await getVersion();
+    await getVersion(currentConfig);
     return true;
   } catch {
     return false;
   }
 }
 
-export async function getVersion() {
-  return api('/version');
+export async function getVersion(currentConfig = createConfig()) {
+  return api('/version', {}, currentConfig);
 }
 
-export async function reloadConfig(path = '') {
+export async function reloadConfig(path = '', currentConfig = createConfig()) {
   return api(`/configs?force=true`, {
     method: 'PUT',
     body: JSON.stringify({
       path,
       payload: ''
     })
-  });
+  }, currentConfig);
 }
 
-export async function restartKernel() {
+export async function restartKernel(currentConfig = createConfig()) {
   return api('/restart', {
     method: 'POST',
     body: JSON.stringify({
       path: '',
       payload: ''
     })
-  });
+  }, currentConfig);
 }
 
 export async function getProxies() {

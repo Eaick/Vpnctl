@@ -1,0 +1,47 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1280" height="720" fill="#0B1020"/>
+  <rect x="40" y="40" width="1200" height="640" rx="24" fill="#111827" stroke="#1F2937" stroke-width="2"/>
+  <rect x="68" y="68" width="1144" height="52" rx="14" fill="#0F172A"/>
+  <text x="94" y="101" fill="#7DD3FC" font-family="Consolas, 'Courier New', monospace" font-size="26" font-weight="700">VPNCTL  Fast lanes. Calm terminal.  theme:gemini</text>
+
+  <rect x="68" y="146" width="240" height="486" rx="18" fill="#0F172A" stroke="#38BDF8" stroke-width="2"/>
+  <text x="92" y="183" fill="#E5E7EB" font-family="Consolas, 'Courier New', monospace" font-size="24" font-weight="700">页面 (10)</text>
+  <text x="92" y="228" fill="#CBD5E1" font-family="Consolas, 'Courier New', monospace" font-size="22">  总览</text>
+  <text x="92" y="266" fill="#CBD5E1" font-family="Consolas, 'Courier New', monospace" font-size="22">  运行状态</text>
+  <text x="92" y="304" fill="#CBD5E1" font-family="Consolas, 'Courier New', monospace" font-size="22">  订阅管理</text>
+  <rect x="84" y="324" width="208" height="36" rx="10" fill="#7DD3FC"/>
+  <text x="92" y="349" fill="#0F172A" font-family="Consolas, 'Courier New', monospace" font-size="22" font-weight="700">&gt; 节点与策略组</text>
+
+  <rect x="332" y="146" width="280" height="486" rx="18" fill="#0F172A" stroke="#38BDF8" stroke-width="2"/>
+  <text x="360" y="183" fill="#E5E7EB" font-family="Consolas, 'Courier New', monospace" font-size="24" font-weight="700">Providers (3)</text>
+
+  <rect x="350" y="214" width="244" height="50" rx="12" fill="#111827"/>
+  <text x="370" y="246" fill="#FDE68A" font-family="Consolas, 'Courier New', monospace" font-size="24">* GLOBAL                  5</text>
+
+  <rect x="350" y="278" width="244" height="50" rx="12" fill="#7DD3FC"/>
+  <text x="370" y="310" fill="#0F172A" font-family="Consolas, 'Courier New', monospace" font-size="24" font-weight="700">&gt;* VPNCTL                 3</text>
+
+  <rect x="350" y="342" width="244" height="50" rx="12" fill="#111827"/>
+  <text x="370" y="374" fill="#FDE68A" font-family="Consolas, 'Courier New', monospace" font-size="24">* Flybit                 77</text>
+
+  <rect x="636" y="146" width="576" height="486" rx="18" fill="#0F172A" stroke="#38BDF8" stroke-width="2"/>
+  <text x="664" y="183" fill="#E5E7EB" font-family="Consolas, 'Courier New', monospace" font-size="24" font-weight="700">Nodes (3) | GStatic | ALL</text>
+
+  <rect x="654" y="214" width="540" height="58" rx="14" fill="#7DD3FC"/>
+  <text x="676" y="250" fill="#0F172A" font-family="Consolas, 'Courier New', monospace" font-size="22" font-weight="700">&gt;* 日本 01                         VMESS   134ms</text>
+
+  <rect x="654" y="286" width="540" height="58" rx="14" fill="#111827"/>
+  <text x="676" y="322" fill="#F8FAFC" font-family="Consolas, 'Courier New', monospace" font-size="22">  香港 02                         TROJAN   92ms</text>
+
+  <rect x="654" y="358" width="540" height="58" rx="14" fill="#111827"/>
+  <text x="676" y="394" fill="#F8FAFC" font-family="Consolas, 'Courier New', monospace" font-size="22">  新加坡 03                       VLESS   101ms</text>
+
+  <rect x="654" y="452" width="540" height="138" rx="16" fill="#111827"/>
+  <text x="680" y="492" fill="#E5E7EB" font-family="Consolas, 'Courier New', monospace" font-size="22" font-weight="700">说明</text>
+  <text x="680" y="530" fill="#CBD5E1" font-family="Consolas, 'Courier New', monospace" font-size="20">- Providers 只显示当前激活订阅真正生效的运行态</text>
+  <text x="680" y="564" fill="#CBD5E1" font-family="Consolas, 'Courier New', monospace" font-size="20">- f: 按协议筛选，支持 VLESS / VMESS / TROJAN / SS</text>
+  <text x="680" y="598" fill="#CBD5E1" font-family="Consolas, 'Courier New', monospace" font-size="20">- d: 对当前 provider 整组测速</text>
+
+  <rect x="68" y="648" width="1144" height="14" rx="7" fill="#111827"/>
+  <text x="70" y="676" fill="#94A3B8" font-family="Consolas, 'Courier New', monospace" font-size="18">Tab 切换区域  Enter 切换节点  / 搜索  f 协议筛选  d 整组测速  q 退出</text>
+</svg>

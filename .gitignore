@@ -2,3 +2,12 @@ node_modules/
 dist/
 .sandbox/
 *.log
+config.yaml
+.env
+.env.*
+*.local
+coverage/
+runtime/
+data/
+cache/
+logs/

@@ -1,0 +1,22 @@
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: info
+external-controller: 127.0.0.1:9090
+
+proxies:
+  - name: Example-VLESS
+    type: vless
+    server: example.com
+    port: 443
+    uuid: 00000000-0000-0000-0000-000000000000
+    tls: true
+
+proxy-groups:
+  - name: VPNCTL
+    type: select
+    proxies:
+      - Example-VLESS
+
+rules:
+  - MATCH,VPNCTL

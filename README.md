@@ -113,6 +113,55 @@ vpnctl config set-ports --proxy-mode separate
 vpnctl remove-sub --id "subscription-id"
 ```
 
+## 卸载
+
+`VPNCTL` 当前没有单独的 `vpnctl uninstall` 一键卸载命令，推荐按下面顺序清理，避免残留后台进程或 Shell 代理环境。
+
+### 1. 停止 mihomo
+
+```bash
+vpnctl stop
+```
+
+如果只是在开发沙箱中测试，可以改用：
+
+```bash
+node ./dist/index.js dev clean
+```
+
+### 2. 移除 Shell 集成
+
+如果安装过 bashrc 集成，先移除受管片段：
+
+```bash
+vpnctl shell uninstall --bashrc
+```
+
+如果使用了自定义 bashrc 路径：
+
+```bash
+vpnctl shell uninstall --bashrc-path "/path/to/.bashrc"
+```
+
+### 3. 取消全局命令
+
+如果通过 `npm link` 安装过全局命令：
+
+```bash
+npm unlink -g vpnctl-mihomo
+```
+
+如果只是克隆源码运行，删除项目目录即可。
+
+### 4. 删除用户运行目录
+
+正式模式的运行数据默认保存在当前系统用户目录下：
+
+- Windows: `%USERPROFILE%\.vpnctl\`
+- Linux: `~/.local/share/vpnctl/`
+
+确认不再需要订阅缓存、生成配置和运行日志后，可以手动删除对应目录。
+
 ## 配置示例
 
 仓库只提供可公开的示例文件：

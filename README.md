@@ -82,9 +82,40 @@ npm link
 vpnctl
 ```
 
+## 离线安装 Mihomo
+
+服务器无法访问 GitHub 时，可以在能联网的电脑上下载 Mihomo，再上传到服务器。以下用于 Linux x64 的首次安装，假设已完成上面的 VPNCTL 安装，并使用默认运行目录。
+
+1. 在服务器执行 `uname -m`，确认输出为 `x86_64`。应下载服务器对应的 Linux 内核，而不是下载电脑对应的版本。
+2. 在能联网的电脑上打开 [Mihomo 官方发布页](https://github.com/MetaCubeX/mihomo/releases)。以下以 `v1.19.31` 为例：[下载 Linux amd64 v1 内核](https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-amd64-v1-v1.19.31.gz)。
+3. 将下载的 `.gz` 文件上传至服务器的 `~/upload/` 目录。若服务器也无法拉取 VPNCTL 源码，可一并上传源码，再执行安装命令。
+4. 先跳过在线下载完成初始化：
+
+```bash
+vpnctl init --skip-download
+```
+
+5. 检查压缩文件，解压到受管内核路径，并赋予执行权限：
+
+```bash
+gzip -t "$HOME/upload/mihomo-linux-amd64-v1-v1.19.31.gz" &&
+gzip -dc "$HOME/upload/mihomo-linux-amd64-v1-v1.19.31.gz" \
+  > "$HOME/.local/share/vpnctl/mihomo/mihomo" &&
+chmod 755 "$HOME/.local/share/vpnctl/mihomo/mihomo" &&
+"$HOME/.local/share/vpnctl/mihomo/mihomo" -v
+```
+
+6. 确认显示真实 Mihomo 版本后，输入 `vpnctl`，添加订阅并启动内核。
+
+**顺序必须是先初始化、再替换内核。** `--skip-download` 生成的只是占位文件，不能代理；替换后不要再次执行初始化，否则会覆盖手动放入的内核。已有安装只需先停止受管 Mihomo，再替换内核，不要重复初始化。自定义运行目录时，请相应调整上述目标路径。
+
+本节只解决 Mihomo 无法从 GitHub 下载的问题；`npm install` 仍需访问 npm 下载源。远程订阅也无法访问时，可以上传本地 YAML，在 TUI 中添加文件订阅，或执行 `vpnctl add-sub --file "/srv/vpn/nodes.yaml" --name "本地订阅"`。
+
 ## 开始使用
 
 ### 1. 初始化
+
+若已按“离线安装 Mihomo”章节完成初始化和内核替换，请跳过此步，直接启动 TUI。
 
 ```bash
 vpnctl init

@@ -219,7 +219,7 @@ unalias vpnon vpnoff vpnstat codexvpn 2>/dev/null || true
 
 个人运行目录默认为 `~/.local/share/vpnctl/`，包含内核、安装状态、订阅、缓存、生成配置和日志。卸载时默认保留个人订阅数据。
 
-仓库仅提供 [公开配置示例](./config.example.yaml)。真实订阅链接、节点凭据、个人运行配置及日志不应提交到 GitHub。
+仓库仅提供 [公开配置示例](./config.example.yaml)。
 
 
 ## 许可证

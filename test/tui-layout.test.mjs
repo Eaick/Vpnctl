@@ -30,7 +30,7 @@ test('truncateText adds ellipsis when width is limited', () => {
 
 test('truncateText keeps mixed Chinese and cursor symbols within the available columns', () => {
   for (const width of [2, 5, 8, 10, 12, 20]) {
-    const text = truncateText('▶ 光标 新加坡节点 01', width);
+    const text = truncateText('▶ 新加坡节点 01', width);
     assert.ok(stringWidth(text) <= width);
   }
 });

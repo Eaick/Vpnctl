@@ -52,7 +52,7 @@ export function buildNodeCardLines({ title, items, selectedId, width, height, em
   } else {
     for (const row of windowed.items) {
       const cards = row.map((item) => ({
-        title: `${item.id === selectedId ? '▶ 光标 ' : ''}${item.label}`,
+        title: `${item.id === selectedId ? '▶ ' : ''}${item.label}`,
         lines: [`${item.isCurrent ? '● 使用中 · ' : ''}协议 ${item.protocolLabel}`, `延迟 ${item.delayLabel}`],
         isSelected: item.id === selectedId,
         isCurrent: item.isCurrent,

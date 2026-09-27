@@ -43,8 +43,9 @@ test('only the cursor card is highlighted, not its row neighbour', () => {
       assert.equal(stringWidth(line.text), 80);
     }
     const title = cardLines[1];
-    assert.match(title.segments.find((segment) => segment.tone === 'selected').text, /▶ 光标/);
-    assert.ok(!title.segments.find((segment) => segment.text.includes(selectedId === 'left' ? '右侧节点' : '左侧节点')).text.includes('光标'));
+    assert.match(title.segments.find((segment) => segment.tone === 'selected').text, /▶ /);
+    assert.ok(!title.text.includes('光标'));
+    assert.ok(!title.segments.find((segment) => segment.text.includes(selectedId === 'left' ? '右侧节点' : '左侧节点')).text.includes('▶'));
     assert.match(cardLines[0].segments.find((segment) => segment.tone === 'selected').text, /^╔═/);
   }
 });
@@ -55,12 +56,12 @@ test('current node and cursor remain distinct without relying on colour', () => 
     { id: 'cursor', label: '待选择', protocolLabel: 'VLESS', delayLabel: '--', isCurrent: false }
   ];
   const separate = buildNodeCardLines({ title: '节点', items, selectedId: 'cursor', width: 80, height: 7 });
-  assert.ok(separate.some((line) => line.text.includes('▶ 光标 待选择')));
+  assert.ok(separate.some((line) => line.text.includes('▶ 待选择')));
   assert.ok(separate.some((line) => line.segments?.some((segment) => segment.tone === 'active' && segment.text.includes('● 使用中'))));
   assert.match(separate[1].segments[0].text, /^┏━/);
 
   const combined = buildNodeCardLines({ title: '节点', items, selectedId: 'current', width: 80, height: 7 });
-  assert.ok(combined.some((line) => line.text.includes('▶ 光标 正在使用')));
+  assert.ok(combined.some((line) => line.text.includes('▶ 正在使用')));
   assert.ok(combined.some((line) => line.segments?.some((segment) => segment.tone === 'selected' && segment.text.includes('● 使用中'))));
 });
 

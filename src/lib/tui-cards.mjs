@@ -6,17 +6,32 @@ function cardColumns(width) {
 
 function renderCard(card, width) {
   const inner = Math.max(1, width - 2);
-  const top = `╭${'─'.repeat(inner)}╮`;
-  const bottom = `╰${'─'.repeat(inner)}╯`;
+  const border = card.isSelected
+    ? ['╔', '═', '╗', '║', '╚', '╝']
+    : card.isCurrent
+      ? ['┏', '━', '┓', '┃', '┗', '┛']
+      : ['╭', '─', '╮', '│', '╰', '╯'];
+  const top = `${border[0]}${border[1].repeat(inner)}${border[2]}`;
+  const bottom = `${border[4]}${border[1].repeat(inner)}${border[5]}`;
   const content = [card.title, ...card.lines].slice(0, 3);
   while (content.length < 3) content.push('');
-  return [top, ...content.map((line) => `│${padText(line, inner)}│`), bottom];
+  return [top, ...content.map((line) => `${border[3]}${padText(line, inner)}${border[3]}`), bottom];
 }
 
 function renderGridRow(cards, width, columns) {
   const cardWidth = Math.max(12, Math.floor((width - columns + 1) / columns));
   const rendered = cards.map((card) => renderCard(card, cardWidth));
-  return Array.from({ length: 5 }, (_, line) => padText(rendered.map((item) => item[line]).join(' '), width));
+  return Array.from({ length: 5 }, (_, line) => {
+    const segments = [];
+    for (let index = 0; index < rendered.length; index += 1) {
+      if (index) segments.push({ text: ' ', tone: 'normal' });
+      segments.push({ text: rendered[index][line], tone: cards[index].tone || 'normal' });
+    }
+    const content = segments.map((segment) => segment.text).join('');
+    const text = padText(content, width);
+    segments.push({ text: text.slice(content.length), tone: 'normal' });
+    return { text, tone: 'normal', segments };
+  });
 }
 
 export function buildNodeCardLines({ title, items, selectedId, width, height, emptyText }) {
@@ -37,11 +52,13 @@ export function buildNodeCardLines({ title, items, selectedId, width, height, em
   } else {
     for (const row of windowed.items) {
       const cards = row.map((item) => ({
-        title: `${item.id === selectedId ? '›' : ' '} ${item.isCurrent ? '●' : ' '} ${item.label}`,
-        lines: [`协议 ${item.protocolLabel}`, `延迟 ${item.delayLabel}`]
+        title: `${item.id === selectedId ? '▶ 光标 ' : ''}${item.label}`,
+        lines: [`${item.isCurrent ? '● 使用中 · ' : ''}协议 ${item.protocolLabel}`, `延迟 ${item.delayLabel}`],
+        isSelected: item.id === selectedId,
+        isCurrent: item.isCurrent,
+        tone: item.id === selectedId ? 'selected' : item.isCurrent ? 'active' : 'normal'
       }));
-      const tone = row.some((item) => item.id === selectedId) ? 'selected' : 'normal';
-      lines.push(...renderGridRow(cards, safeWidth, columns).map((text) => ({ text, tone })));
+      lines.push(...renderGridRow(cards, safeWidth, columns));
       lines.push({ text: ' '.repeat(safeWidth), tone: 'normal' });
     }
   }
@@ -55,7 +72,7 @@ export function buildOverviewCardLines({ cards, width, height, offset = 0 }) {
   const columns = cardColumns(safeWidth);
   const body = [];
   for (let index = 0; index < cards.length; index += columns) {
-    body.push(...renderGridRow(cards.slice(index, index + columns), safeWidth, columns).map((text) => ({ text, tone: 'normal' })));
+    body.push(...renderGridRow(cards.slice(index, index + columns), safeWidth, columns));
     if (index + columns < cards.length) body.push({ text: ' '.repeat(safeWidth), tone: 'normal' });
   }
   const maxScroll = Math.max(0, body.length - Math.max(0, safeHeight - 1));

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import stringWidth from 'string-width';
 import {
   getLayoutMode,
   getProviderPaneWidth,
@@ -25,6 +26,13 @@ test('provider pane width follows layout mode', () => {
 test('truncateText adds ellipsis when width is limited', () => {
   assert.equal(truncateText('abcdefghijkl', 6), 'abcde…');
   assert.equal(truncateText('abc', 6), 'abc');
+});
+
+test('truncateText keeps mixed Chinese and cursor symbols within the available columns', () => {
+  for (const width of [2, 5, 8, 10, 12, 20]) {
+    const text = truncateText('▶ 光标 新加坡节点 01', width);
+    assert.ok(stringWidth(text) <= width);
+  }
 });
 
 test('filterItems matches case-insensitive label text', () => {

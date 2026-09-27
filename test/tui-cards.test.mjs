@@ -24,6 +24,58 @@ test('node cards keep the selected node visible at common terminal widths', () =
   }
 });
 
+test('only the cursor card is highlighted, not its row neighbour', () => {
+  for (const selectedId of ['left', 'right']) {
+    const lines = buildNodeCardLines({
+      title: '节点',
+      items: [
+        { id: 'left', label: '左侧节点', protocolLabel: 'SS', delayLabel: '--' },
+        { id: 'right', label: '右侧节点', protocolLabel: 'VLESS', delayLabel: '42ms' }
+      ],
+      selectedId, width: 80, height: 7, emptyText: '无节点'
+    });
+    const cardLines = lines.filter((line) => line.segments);
+    assert.equal(cardLines.length, 5);
+    for (const line of cardLines) {
+      assert.equal(line.tone, 'normal');
+      assert.equal(line.segments.filter((segment) => segment.tone === 'selected').length, 1);
+      assert.equal(line.segments.map((segment) => segment.text).join(''), line.text);
+      assert.equal(stringWidth(line.text), 80);
+    }
+    const title = cardLines[1];
+    assert.match(title.segments.find((segment) => segment.tone === 'selected').text, /▶ 光标/);
+    assert.ok(!title.segments.find((segment) => segment.text.includes(selectedId === 'left' ? '右侧节点' : '左侧节点')).text.includes('光标'));
+    assert.match(cardLines[0].segments.find((segment) => segment.tone === 'selected').text, /^╔═/);
+  }
+});
+
+test('current node and cursor remain distinct without relying on colour', () => {
+  const items = [
+    { id: 'current', label: '正在使用', protocolLabel: 'SS', delayLabel: '50ms', isCurrent: true },
+    { id: 'cursor', label: '待选择', protocolLabel: 'VLESS', delayLabel: '--', isCurrent: false }
+  ];
+  const separate = buildNodeCardLines({ title: '节点', items, selectedId: 'cursor', width: 80, height: 7 });
+  assert.ok(separate.some((line) => line.text.includes('▶ 光标 待选择')));
+  assert.ok(separate.some((line) => line.segments?.some((segment) => segment.tone === 'active' && segment.text.includes('● 使用中'))));
+  assert.match(separate[1].segments[0].text, /^┏━/);
+
+  const combined = buildNodeCardLines({ title: '节点', items, selectedId: 'current', width: 80, height: 7 });
+  assert.ok(combined.some((line) => line.text.includes('▶ 光标 正在使用')));
+  assert.ok(combined.some((line) => line.segments?.some((segment) => segment.tone === 'selected' && segment.text.includes('● 使用中'))));
+});
+
+test('card segment widths stay aligned in a single column and incomplete last row', () => {
+  for (const width of [12, 46, 73, 80, 111]) {
+    const lines = buildNodeCardLines({ title: '节点', items: nodes.slice(0, 3), selectedId: 'node-2', width, height: 18 });
+    for (const line of lines) {
+      assert.equal(stringWidth(line.text), width);
+      if (line.segments) {
+        assert.equal(line.segments.map((segment) => segment.text).join(''), line.text);
+      }
+    }
+  }
+});
+
 test('overview cards scroll without exceeding a narrow or short panel', () => {
   const cards = Array.from({ length: 6 }, (_, index) => ({ title: `卡片 ${index}`, lines: ['状态', '信息'] }));
   for (const width of [50, 78, 115]) {

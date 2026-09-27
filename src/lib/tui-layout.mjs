@@ -31,7 +31,12 @@ export function truncateText(text, width) {
   if (width <= 0) return '';
   if (stringWidth(value) <= width) return value;
   if (width === 1) return '.';
-  return cliTruncate(value, width, { position: 'end' });
+  // 截断库与显示宽度对部分 Unicode 符号的计算不同，需校验实际结果。
+  for (let columns = width; columns > 0; columns -= 1) {
+    const truncated = cliTruncate(value, columns, { position: 'end' });
+    if (stringWidth(truncated) <= width) return truncated;
+  }
+  return '';
 }
 
 export function padText(text, width) {

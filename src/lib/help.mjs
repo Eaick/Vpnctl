@@ -98,6 +98,8 @@ const TUI_HELP_SECTIONS = [
   {
     title: '\u56fe\u4f8b',
     lines: [
+      '节点卡片：双线边框 + ▶ 光标表示光标所在卡片，Enter 才切换实际节点',
+      '节点卡片：● 使用中表示当前实际节点；非光标卡片使用粗线边框',
       '>: \u5f53\u524d\u5149\u6807',
       '*: \u5f53\u524d provider \u6216\u5f53\u524d\u8282\u70b9',
       '--: \u5c1a\u672a\u6d4b\u901f\u6216 API \u79bb\u7ebf',

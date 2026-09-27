@@ -149,7 +149,12 @@ function Panel({
     paddingX: 1,
     children: lines.map((line, index) => /*#__PURE__*/_jsx(Text, {
       ...toneProps(themeName, line.tone),
-      children: line.text
+      children: line.segments
+        ? line.segments.map((segment, segmentIndex) => /*#__PURE__*/_jsx(Text, {
+          ...toneProps(themeName, segment.tone),
+          children: segment.text
+        }, segmentIndex))
+        : line.text
     }, `${index}-${line.text}`))
   });
 }

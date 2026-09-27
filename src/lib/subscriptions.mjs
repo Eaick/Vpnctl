@@ -88,7 +88,7 @@ export function parseNodesFromUriList(content) {
   return content
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter(Boolean)
+    .filter((line) => /^[a-z][a-z0-9+.-]*:\/\//i.test(line) && !/^https?:\/\//i.test(line))
     .map((line) => {
       const scheme = line.includes('://') ? line.slice(0, line.indexOf('://')) : '';
       const rawName = line.includes('#') ? line.slice(line.indexOf('#') + 1) : line;
@@ -288,6 +288,9 @@ export async function addSubscriptionFromUrl(url, alias, currentConfig = createC
 export async function addSubscriptionFromFile(filePath, alias, currentConfig = createConfig()) {
   const resolved = path.resolve(filePath);
   const content = await fs.readFile(resolved, 'utf8');
+  if (parseNodes(content).length === 0) {
+    throw new Error('本地订阅未包含可识别的节点，未添加');
+  }
   const contentHash = sha256(content);
   const subscriptions = await loadSubscriptions(currentConfig);
   const exists = subscriptions.find((item) => item.type === 'local' && item.contentHash === contentHash);
@@ -376,7 +379,7 @@ async function buildProviderEntry(subscription) {
     return buildLocalProviderEntry(subscription);
   }
 
-  if (subscription.syncStatus === 'synced' && await fileExists(subscription.providerPath)) {
+  if (subscription.nodeCount > 0 && await fileExists(subscription.providerPath)) {
     return buildLocalProviderEntry(subscription);
   }
 
@@ -458,6 +461,96 @@ async function loadLocalSubscriptionContent(subscription) {
   return fs.readFile(subscription.source, 'utf8');
 }
 
+async function storeSubscriptionContent(subscription, content, nodes) {
+  await fs.mkdir(path.dirname(subscription.cachePath), { recursive: true });
+  await fs.mkdir(path.dirname(subscription.providerPath), { recursive: true });
+  const cacheTemp = `${subscription.cachePath}.${randomUUID()}.tmp`;
+  const providerTemp = `${subscription.providerPath}.${randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(cacheTemp, content, 'utf8');
+    await fs.writeFile(providerTemp, content, 'utf8');
+    await fs.rename(cacheTemp, subscription.cachePath);
+    await fs.rename(providerTemp, subscription.providerPath);
+  } finally {
+    await Promise.all([
+      fs.rm(cacheTemp, { force: true }),
+      fs.rm(providerTemp, { force: true })
+    ]);
+  }
+
+  subscription.contentHash = sha256(content);
+  subscription.lastSyncedAt = new Date().toISOString();
+  subscription.nodes = nodes;
+  subscription.nodeNames = nodes.map((item) => item.name);
+  subscription.nodeCount = nodes.length;
+  subscription.syncStatus = 'synced';
+  subscription.syncError = '';
+}
+
+export async function editSubscription(id, { url, file, name } = {}, currentConfig = createConfig()) {
+  if (typeof id !== 'string' || !id.trim()) throw new Error('请指定有效的订阅 ID');
+  for (const [key, value] of Object.entries({ url, file, name })) {
+    if (value !== undefined && typeof value !== 'string') {
+      throw new Error(`--${key} 必须填写字符串值`);
+    }
+  }
+  if (url !== undefined && file !== undefined) {
+    throw new Error('只能指定 URL 或本地文件其中一种来源');
+  }
+
+  const subscriptions = await loadSubscriptions(currentConfig);
+  const subscription = subscriptions.find((item) => item.id === id);
+  if (!subscription) throw new Error(`订阅不存在：${id}`);
+
+  const displayName = name === undefined ? subscription.displayName : String(name).trim();
+  if (!displayName) throw new Error('订阅名称不能为空');
+  if ([currentConfig.defaultGroup, 'DIRECT', 'GLOBAL', 'REJECT', 'REJECT-DROP', 'PASS', 'COMPATIBLE', 'PASS-RULE'].includes(displayName)) {
+    throw new Error('订阅名称不能与内置策略组重名');
+  }
+  if (subscriptions.some((item) => item.id !== id && item.displayName === displayName)) {
+    throw new Error(`订阅名称已存在：${displayName}`);
+  }
+
+  let type = subscription.type;
+  let source = subscription.source;
+  if (url !== undefined) {
+    if (!String(url).trim()) throw new Error('订阅 URL 不能为空');
+    source = normalizeSubscriptionUrl(String(url).trim());
+    if (!/^https?:$/.test(new URL(source).protocol)) {
+      throw new Error('订阅 URL 只支持 HTTP 或 HTTPS');
+    }
+    type = 'remote';
+  } else if (file !== undefined) {
+    if (!String(file).trim()) throw new Error('本地文件路径不能为空');
+    source = path.resolve(String(file).trim());
+    type = 'local';
+  }
+
+  const sourceChanged = type !== subscription.type || source !== subscription.source;
+  if (sourceChanged) {
+    const duplicate = subscriptions.find((item) => item.id !== id && item.type === type && item.source === source);
+    if (duplicate) throw new Error(`订阅来源已存在：${duplicate.displayName} (${duplicate.id})`);
+
+    const candidate = { ...subscription, type, source };
+    const content = type === 'remote'
+      ? await loadRemoteSubscriptionContent(candidate)
+      : await loadLocalSubscriptionContent(candidate);
+    const nodes = parseNodes(content);
+    if (!nodes.length) throw new Error('新订阅来源未包含可识别的节点，原订阅未修改');
+    if (type === 'local') {
+      const duplicateContent = subscriptions.find((item) => item.id !== id && item.type === 'local' && item.contentHash === sha256(content));
+      if (duplicateContent) throw new Error(`本地订阅内容已存在：${duplicateContent.displayName} (${duplicateContent.id})`);
+    }
+    await storeSubscriptionContent(candidate, content, nodes);
+    Object.assign(subscription, candidate);
+  }
+
+  subscription.displayName = displayName;
+  await saveSubscriptions(currentConfig, subscriptions);
+  await writeManagedConfig(currentConfig);
+  return subscription;
+}
+
 export async function syncSubscriptions({ id } = {}, currentConfig = createConfig()) {
   const subscriptions = await loadSubscriptions(currentConfig);
   const targetItems = id
@@ -476,20 +569,12 @@ export async function syncSubscriptions({ id } = {}, currentConfig = createConfi
         ? await loadRemoteSubscriptionContent(subscription)
         : await loadLocalSubscriptionContent(subscription);
 
-      await fs.mkdir(path.dirname(subscription.cachePath), { recursive: true });
-      await fs.mkdir(path.dirname(subscription.providerPath), { recursive: true });
-      await fs.writeFile(subscription.cachePath, content, 'utf8');
-      await fs.writeFile(subscription.providerPath, content, 'utf8');
-
       const nodes = parseNodes(content);
-      const nodeNames = nodes.map((item) => item.name);
-      subscription.contentHash = sha256(content);
-      subscription.lastSyncedAt = new Date().toISOString();
-      subscription.nodes = nodes;
-      subscription.nodeNames = nodeNames;
-      subscription.nodeCount = nodes.length;
-      subscription.syncStatus = 'synced';
-      subscription.syncError = '';
+      if (nodes.length === 0) {
+        throw new Error('订阅未包含可识别的节点，已保留上次成功同步的缓存');
+      }
+
+      await storeSubscriptionContent(subscription, content, nodes);
       results.push({
         id: subscription.id,
         displayName: subscription.displayName,

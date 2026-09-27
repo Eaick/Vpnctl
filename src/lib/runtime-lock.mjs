@@ -30,10 +30,11 @@ export async function readRuntimeLock(currentConfig = createConfig()) {
   return readJson(currentConfig.lockFile, null);
 }
 
-export async function writeRuntimeLock(currentConfig = createConfig(), pid = null) {
+export async function writeRuntimeLock(currentConfig = createConfig(), pid = null, identity = null) {
   const ports = getConfiguredPortPlan(currentConfig);
   const payload = {
     pid,
+    startedAt: identity?.startedAt || null,
     mode: currentConfig.mode,
     proxyMode: currentConfig.proxyMode,
     root: normalize(currentConfig.paths.root),

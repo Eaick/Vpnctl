@@ -1,6 +1,6 @@
 {
   "name": "vpnctl-mihomo",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "SSH-friendly Node.js CLI for controlling mihomo and shell proxy state",
   "type": "module",
   "bin": {

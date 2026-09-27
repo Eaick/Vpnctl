@@ -4,6 +4,7 @@ import { getConfiguredPortPlan } from './ports.mjs';
 import { readPid, isPidAlive } from './process.mjs';
 import { readRuntimeLock } from './runtime-lock.mjs';
 import { isApiAlive } from './mihomo.mjs';
+import { matchesManagedProcess } from './process-identity.mjs';
 
 function normalize(filepath) {
   return path.resolve(filepath).replace(/\\/g, '/');
@@ -18,13 +19,14 @@ function buildExpectedPorts(currentConfig) {
   );
 }
 
-function isLockOwnedByCurrentRuntime(lock, currentConfig) {
+function isLockOwnedByCurrentRuntime(lock, currentConfig, pid) {
   if (!lock) return false;
 
   const expectedPorts = buildExpectedPorts(currentConfig);
   const actualPorts = lock.ports || {};
 
-  return normalize(lock.root || '') === normalize(currentConfig.paths.root)
+  return lock.pid === pid
+    && normalize(lock.root || '') === normalize(currentConfig.paths.root)
     && normalize(lock.lockFile || '') === normalize(currentConfig.lockFile)
     && lock.mode === currentConfig.mode
     && lock.proxyMode === currentConfig.proxyMode
@@ -35,15 +37,19 @@ export async function getManagedRuntimeStatus(currentConfig = createConfig()) {
   const pid = await readPid(currentConfig);
   const pidAlive = await isPidAlive(pid);
   const runtimeLock = await readRuntimeLock(currentConfig);
-  const lockOwned = isLockOwnedByCurrentRuntime(runtimeLock, currentConfig);
+  const lockOwned = isLockOwnedByCurrentRuntime(runtimeLock, currentConfig, pid);
+  const processOwned = pidAlive && lockOwned
+    ? await matchesManagedProcess(pid, currentConfig, runtimeLock)
+    : false;
   const apiReachable = await isApiAlive(currentConfig);
-  const managedApiAlive = Boolean(apiReachable && pidAlive && lockOwned);
+  const managedApiAlive = Boolean(apiReachable && processOwned);
 
   return {
     pid,
     pidAlive,
     runtimeLock,
     lockOwned,
+    processOwned,
     apiReachable,
     managedApiAlive,
     foreignApiAlive: Boolean(apiReachable && !managedApiAlive)

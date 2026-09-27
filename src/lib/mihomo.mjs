@@ -23,7 +23,9 @@ export async function api(path, options = {}, currentConfig = createConfig()) {
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`API ${res.status} ${res.statusText}${text ? `: ${text}` : ''}`);
+    const error = new Error(`API ${res.status} ${res.statusText}${text ? `: ${text}` : ''}`);
+    error.status = res.status;
+    throw error;
   }
 
   const contentType = res.headers.get('content-type') || '';
@@ -90,7 +92,19 @@ export async function chooseNode(groupName, nodeName) {
 
 export async function testProxyDelay(proxyName, { url = 'https://www.gstatic.com/generate_204', timeout = 5000 } = {}) {
   const qs = new URLSearchParams({ url, timeout: String(timeout) });
-  return api(`/proxies/${encodeURIComponent(proxyName)}/delay?${qs.toString()}`);
+  try {
+    return await api(`/proxies/${encodeURIComponent(proxyName)}/delay?${qs.toString()}`);
+  } catch (error) {
+    if (error.status !== 404) throw error;
+
+    const { providers = {} } = await api('/providers/proxies');
+    for (const [providerName, provider] of Object.entries(providers)) {
+      if (provider.proxies?.some((proxy) => proxy.name === proxyName)) {
+        return api(`/providers/proxies/${encodeURIComponent(providerName)}/${encodeURIComponent(proxyName)}/healthcheck?${qs.toString()}`);
+      }
+    }
+    throw error;
+  }
 }
 
 export async function getCurrentNode(groupName) {

@@ -6,17 +6,19 @@ import { getTuiHelpSections } from '../lib/help.mjs';
 import { getTheme, getThemeNames, getThemeOption, getThemeTone } from '../lib/theme.mjs';
 import { getLayoutMode, getViewportHeights, padText, truncateText, getVisibleWindow, moveSelection, filterItems, resolveSelectedIndex } from '../lib/tui-layout.mjs';
 import { createInitialTuiState, getProviders, getSelectedProvider, getNodes, ensureSelections, getSelectedNode, setNotice, getAvailableProtocols } from '../lib/tui-state.mjs';
-import { initializeRuntimeWithOptions, setConfiguredPorts, setConfiguredTheme } from '../lib/install.mjs';
+import { initializeRuntimeWithOptions, setConfiguredTheme } from '../lib/install.mjs';
 import { migrateOldInstall } from '../lib/migration.mjs';
-import { ensureSubscriptionStore, addSubscriptionFromUrl, addSubscriptionFromFile, activateSubscription, removeSubscription, syncSubscriptions, writeManagedConfig, formatProtocolTag } from '../lib/subscriptions.mjs';
+import { ensureSubscriptionStore, addSubscriptionFromUrl, addSubscriptionFromFile, editSubscription, activateSubscription, removeSubscription, syncSubscriptions, writeManagedConfig, formatProtocolTag } from '../lib/subscriptions.mjs';
 import { installShellIntegration, uninstallShellIntegration } from '../lib/shell.mjs';
 import { ensureMihomoInstalled } from '../lib/prereq.mjs';
-import { readPid, isPidAlive, startDetached, stopByPid, removePidFile } from '../lib/process.mjs';
+import { startDetached, stopManagedRuntime } from '../lib/process.mjs';
 import { getLatencyTargets, getLatencyTarget } from '../lib/latency-targets.mjs';
-import { createAddSubscriptionModal, createPortModal, createInitModal, createInitProgressModal, createDeleteSubscriptionModal, createShellInstallModal, rebuildPortModal, cycleModalFieldOption, getPrimaryGuidedAction, buildOverviewGuide, buildShellGuide } from '../lib/ui-guidance.mjs';
+import { createAddSubscriptionModal, createEditSubscriptionModal, createPortModal, createInitModal, createInitProgressModal, createDeleteSubscriptionModal, createShellInstallModal, rebuildPortModal, cycleModalFieldOption, getPrimaryGuidedAction, buildOverviewGuide, buildShellGuide } from '../lib/ui-guidance.mjs';
 import { formatInitProgressLine } from '../lib/init-progress.mjs';
-import { applyManagedConfigToRuntime } from '../lib/runtime-apply.mjs';
+import { applyManagedConfigToRuntime, configureRuntimePorts } from '../lib/runtime-apply.mjs';
 import { getManagedRuntimeStatus } from '../lib/managed-runtime.mjs';
+import { buildNodeCardLines, buildOverviewCardLines } from '../lib/tui-cards.mjs';
+import { formatMemory, loadOverviewMetrics } from '../lib/overview-monitor.mjs';
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 const COLOR_ENABLED = process.env.NO_COLOR !== '1';
 const LATENCY_CONCURRENCY = 4;
@@ -300,6 +302,7 @@ function bootState(snapshot) {
     selectedSubscriptionId: snapshot.subscriptions[0]?.id || null,
     selectedThemeId: snapshot.status.theme || 'gemini',
     selectedLatencyTargetId: 'gstatic',
+    overviewScroll: 0,
     filters: {
       nav: '',
       providers: '',
@@ -353,6 +356,13 @@ async function writeAndApplyRuntime(currentConfig) {
   await writeManagedConfig(currentConfig);
   return applyManagedConfigToRuntime(currentConfig);
 }
+async function syncAndApplyRuntime() {
+  const currentConfig = createConfig();
+  const results = await syncSubscriptions({}, currentConfig);
+  const applied = await applyManagedConfigToRuntime(currentConfig);
+  const failures = results.filter(item => !item.ok);
+  return { applied, failures };
+}
 function openGuidedModal(action, snapshot) {
   if (action === 'init-runtime') return createInitModal(snapshot);
   if (action === 'add-sub') return createAddSubscriptionModal();
@@ -370,6 +380,7 @@ export default function App() {
   const initialConfig = useMemo(() => createConfig(), []);
   const [state, setState] = useState(null);
   const [bootError, setBootError] = useState('');
+  const [overviewMetrics, setOverviewMetrics] = useState(null);
   const dimensions = useMemo(() => ({
     width: stdout.columns || 120,
     height: stdout.rows || 30
@@ -392,6 +403,19 @@ export default function App() {
       mounted = false;
     };
   }, []);
+  useEffect(() => {
+    if (!state || state.sectionId !== 'overview') return undefined;
+    let mounted = true;
+    setOverviewMetrics(null);
+    void loadOverviewMetrics(createConfig(), state.snapshot.status).then(metrics => {
+      if (mounted) setOverviewMetrics(metrics);
+    }).catch(() => {
+      if (mounted) setOverviewMetrics({ network: '不可达' });
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [state?.sectionId, state?.snapshot?.generatedAt]);
   const updateState = mutator => {
     setState(previous => {
       const next = cloneState(previous);
@@ -409,7 +433,7 @@ export default function App() {
   const contentWidth = layoutMode === 'single' ? dimensions.width : Math.max(24, dimensions.width - navWidth - 1);
   const navPanelWidth = layoutMode === 'single' ? dimensions.width : navWidth;
   const providerWidth = Math.max(20, Math.min(28, Math.floor(contentWidth * 0.32)));
-  const nodeWidth = Math.max(20, contentWidth - providerWidth - 1);
+  const nodeWidth = layoutMode === 'single' ? dimensions.width : Math.max(20, contentWidth - providerWidth - 1);
   const selectedProvider = state ? getSelectedProvider(state) : null;
   const nodes = state ? getNodes(state, selectedProvider) : [];
   const selectedNodeId = selectedProvider ? state.selectedNodeIds[selectedProvider.id] : null;
@@ -454,24 +478,7 @@ export default function App() {
     await new Promise(resolve => setTimeout(resolve, 1200));
   };
   const stopRuntime = async () => {
-    const currentConfig = createConfig();
-    const pid = await readPid(currentConfig);
-    if (!pid) return;
-    if (!(await isPidAlive(pid))) {
-      await removePidFile(currentConfig);
-      return;
-    }
-    await stopByPid(pid, {
-      force: false
-    });
-    await new Promise(resolve => setTimeout(resolve, 800));
-    if (await isPidAlive(pid)) {
-      await stopByPid(pid, {
-        force: true
-      });
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
-    await removePidFile();
+    await stopManagedRuntime(createConfig());
   };
   const measureProviderNodes = async (provider, target, nodeItems) => {
     if (!provider || !target || !Array.isArray(nodeItems) || nodeItems.length === 0) return 0;
@@ -532,18 +539,34 @@ export default function App() {
         await addSubscriptionFromFile(source, alias || undefined, currentConfig);
       }
       return writeAndApplyRuntime(currentConfig);
+    } else if (modal.type === 'edit-sub') {
+      const sourceType = readModalValue(modal, 'sourceType').trim();
+      const source = readModalValue(modal, 'source').trim();
+      const name = readModalValue(modal, 'alias').trim();
+      if (!source) throw new Error('订阅来源不能为空');
+      await editSubscription(modal.subscriptionId, {
+        ...(sourceType === 'file' ? { file: source } : { url: source }),
+        name
+      }, currentConfig);
+      const applied = await applyManagedConfigToRuntime(currentConfig);
+      await refreshState();
+      return { ...applied, message: `订阅已修改。${applied.message}` };
     } else if (modal.type === 'set-ports' || modal.type === 'init-runtime') {
       const {
         proxyMode,
         ports
       } = parsePortModal(modal);
       if (modal.type === 'set-ports') {
-        const result = await setConfiguredPorts({
+        const result = await configureRuntimePorts({
           proxyMode,
           ports,
           reason: 'custom'
         });
-        return writeAndApplyRuntime(result.config);
+        return {
+          applied: result.applied,
+          fallbackUsed: false,
+          message: result.applied ? 'mihomo 已在新端口重启' : '端口已保存，将在下次启动时生效'
+        };
       } else {
         updateState(next => {
           next.modal = createInitProgressModal(next.snapshot);
@@ -656,6 +679,13 @@ export default function App() {
         });
         return;
       }
+      if (key.ctrl && input === 'u') {
+        updateState(next => {
+          const field = next.modal.fields[next.modal.activeField];
+          if (field && !field.options?.length) field.value = '';
+        });
+        return;
+      }
       if (typeof input === 'string' && input >= ' ' && input !== '\x7f') {
         updateState(next => {
           const field = next.modal.fields[next.modal.activeField];
@@ -756,6 +786,8 @@ export default function App() {
         } else if (next.sectionId === 'latency') {
           const index = LATENCY_TARGETS.findIndex(item => item.id === next.selectedLatencyTargetId);
           next.selectedLatencyTargetId = LATENCY_TARGETS[moveSelection(index >= 0 ? index : 0, direction, LATENCY_TARGETS.length)]?.id || next.selectedLatencyTargetId;
+        } else if (next.sectionId === 'overview') {
+          next.overviewScroll = Math.max(0, Math.min(next.overviewScroll + direction, overviewMaxScroll));
         } else if (next.sectionId === 'nodes') {
           if (next.sectionPane === 'providers') {
             const items = getProviders(next);
@@ -820,11 +852,12 @@ export default function App() {
         const action = getPrimaryGuidedAction(state.snapshot);
         if (action === 'sync') {
           await withBusy(async () => {
-            await syncSubscriptions({}, createConfig());
-            const applied = await applyManagedConfigToRuntime(createConfig());
+            const { applied, failures } = await syncAndApplyRuntime();
             await refreshState();
             updateState(next => {
-              setNotice(next, applied.fallbackUsed ? 'warn' : 'success', applied.message);
+              setNotice(next, failures.length || applied.fallbackUsed ? 'warn' : 'success', failures.length
+                ? `${failures.length} 个订阅同步失败：${failures[0].displayName}，已保留旧缓存`
+                : applied.message);
             });
           }, '订阅已同步');
           return;
@@ -885,15 +918,30 @@ export default function App() {
         const subscription = subscriptions.find(item => item.id === state.selectedSubscriptionId);
         if (!subscription) return;
         await withBusy(async () => {
-          await activateSubscription(subscription.id, createConfig());
-          await syncSubscriptions({
+          const currentConfig = createConfig();
+          const previous = subscriptions.find(item => item.enabled);
+          const [synced] = await syncSubscriptions({
             id: subscription.id
-          }, createConfig());
-          const applied = await applyManagedConfigToRuntime(createConfig());
-          await refreshState();
-          updateState(next => {
-            setNotice(next, applied.fallbackUsed ? 'warn' : 'success', `${subscription.displayName} 已激活。${applied.message}`);
-          });
+          }, currentConfig);
+          if (!synced?.ok) {
+            throw new Error(`${subscription.displayName} 同步失败：${synced?.error || '未知错误'}；当前订阅未切换`);
+          }
+          try {
+            await activateSubscription(subscription.id, currentConfig);
+            await writeManagedConfig(currentConfig);
+            const applied = await applyManagedConfigToRuntime(currentConfig);
+            await refreshState();
+            updateState(next => {
+              setNotice(next, applied.fallbackUsed ? 'warn' : 'success', `${subscription.displayName} 已激活。${applied.message}`);
+            });
+          } catch (error) {
+            if (previous && previous.id !== subscription.id) {
+              await activateSubscription(previous.id, currentConfig);
+              await writeManagedConfig(currentConfig);
+              await applyManagedConfigToRuntime(currentConfig);
+            }
+            throw error;
+          }
         });
         return;
       }
@@ -919,11 +967,12 @@ export default function App() {
     }
     if (input === 'y') {
       await withBusy(async () => {
-        await syncSubscriptions({}, createConfig());
-        const applied = await applyManagedConfigToRuntime(createConfig());
+        const { applied, failures } = await syncAndApplyRuntime();
         await refreshState();
         updateState(next => {
-          setNotice(next, applied.fallbackUsed ? 'warn' : 'success', applied.message);
+          setNotice(next, failures.length || applied.fallbackUsed ? 'warn' : 'success', failures.length
+            ? `${failures.length} 个订阅同步失败：${failures[0].displayName}，已保留旧缓存`
+            : applied.message);
         });
       }, '订阅已同步');
       return;
@@ -947,6 +996,14 @@ export default function App() {
     if (input === 'a') {
       updateState(next => {
         next.modal = createAddSubscriptionModal();
+      });
+      return;
+    }
+    if (input === 'e' && state.sectionId === 'subscriptions' && state.selectedSubscriptionId) {
+      const subscription = subscriptions.find(item => item.id === state.selectedSubscriptionId);
+      if (!subscription) return;
+      updateState(next => {
+        next.modal = createEditSubscriptionModal(subscription);
       });
       return;
     }
@@ -1089,21 +1146,58 @@ export default function App() {
     }),
     emptyText: '没有可用提供方'
   });
-  const nodeLines = listLines({
+  const nodeLines = buildNodeCardLines({
     title: `节点 (${nodes.length})${state.filters.nodes ? ` / ${state.filters.nodes}` : ''} | ${selectedLatencyTarget.label} | ${protocolFilterLabel}`,
-    items: nodes,
+    items: nodes.map(item => ({
+      ...item,
+      protocolLabel: formatProtocolTag(item.protocol),
+      delayLabel: formatDelay(item.delayMs, item.delayStatus)
+    })),
     selectedId: selectedNodeId,
     width: Math.max(4, nodeWidth - 4),
     height: Math.max(1, middle - 2),
-    renderRow: (item, isSelected) => ({
-      text: `${padText(`${isSelected ? '>' : ' '}${item.isCurrent ? '*' : ' '} ${truncateText(item.label, Math.max(8, nodeWidth - 24))}`, Math.max(8, nodeWidth - 14))} ${formatProtocolTag(item.protocol).padStart(8, ' ')} ${formatDelay(item.delayMs, item.delayStatus).padStart(6, ' ')}`,
-      tone: isSelected ? 'selected' : item.isCurrent ? 'active' : 'normal'
-    }),
     emptyText: state.snapshot.status.apiAlive ? '没有匹配当前筛选的节点' : '请先启动 mihomo，延迟才会显示'
   });
   const overviewGuide = buildOverviewGuide(state.snapshot);
   const shellGuide = buildShellGuide(state.snapshot);
   const activeSubscription = state.snapshot.subscriptions.find(item => item.enabled) || null;
+  const activeProvider = state.snapshot.providers.find(item => item.label === activeSubscription?.displayName);
+  const currentNodeLabel = activeProvider?.currentNodeLabel || state.snapshot.currentNodeLabel || '未选择';
+  const portLabel = key => {
+    const port = state.snapshot.status.ports[key];
+    if (!port) return '--';
+    const stateLabel = port.available ? '空闲' : state.snapshot.status.apiAlive ? '监听' : '冲突';
+    return `${port.port} ${stateLabel}`;
+  };
+  const proxyPorts = state.snapshot.status.proxyMode === 'mix'
+    ? `混合 ${portLabel('mixed')}`
+    : `HTTP ${portLabel('http')} / SOCKS ${portLabel('socks')}`;
+  const overviewCards = [{
+    title: `● Mihomo ${state.snapshot.status.apiAlive ? '在线' : '离线'}`,
+    lines: [`PID ${state.snapshot.status.pid || '无'}`, `版本 ${state.snapshot.status.version?.version || '未知'}`]
+  }, {
+    title: '当前连接节点',
+    lines: [`订阅 ${activeSubscription?.displayName || '无'}`, `节点 ${currentNodeLabel}`]
+  }, {
+    title: '端口配置',
+    lines: [proxyPorts, `API ${portLabel('api')} · ${state.snapshot.status.proxyMode}`]
+  }, {
+    title: '网络检测',
+    lines: [`内网 ${overviewMetrics?.localIp || '未知'} · 出口 ${overviewMetrics?.proxyIp || '未知'}`, `代理 ${overviewMetrics?.network || '检测中'}${overviewMetrics?.networkDelayMs != null ? ` · ${overviewMetrics.networkDelayMs}ms` : ''}`]
+  }, {
+    title: '内存与连接',
+    lines: [`VPNCTL ${formatMemory(overviewMetrics?.vpnctlMemory)}`, `Mihomo ${formatMemory(overviewMetrics?.mihomoMemory)} · 连接 ${overviewMetrics?.connections ?? '--'}`]
+  }, {
+    title: '提示与下一步',
+    lines: [`策略组 ${state.snapshot.status.defaultGroup}`, (state.snapshot.status.nextSteps || []).join(' · ') || '按 r 刷新检测']
+  }];
+  const overviewPanel = buildOverviewCardLines({
+    cards: overviewCards,
+    width: infoWidth,
+    height: Math.max(1, middle - 2),
+    offset: state.overviewScroll
+  });
+  const overviewMaxScroll = overviewPanel.maxScroll;
   const pageContent = {
     overview: ['总览', `初始化状态：${state.snapshot.status.initialized ? '已完成' : '未完成'}`, `mihomo：${state.snapshot.status.apiAlive ? '在线' : '离线'}`, `当前激活订阅：${activeSubscription?.displayName || '无'}`, `代理模式：${state.snapshot.status.proxyMode}`, `默认策略组：${state.snapshot.status.defaultGroup}`, `下一步：${(state.snapshot.status.nextSteps || []).join(' | ')}`, '', ...overviewGuide, '', '动作：Enter 执行下一步 | i 初始化 | a 添加订阅 | y 同步 | s 启动'],
     runtime: ['运行状态', `接口：${state.snapshot.status.apiAlive ? '在线' : '离线'}`, `进程 PID：${state.snapshot.status.pid || '无'}`, `当前节点：${state.snapshot.currentNodeLabel || '无'}`, `运行锁数量：${(state.snapshot.status.runtimeLocks || []).length}`, `日志文件：${state.snapshot.status.logFile}`, '', '动作：s 启动 | k 停止 | r 刷新 | l 显示日志路径'],
@@ -1113,7 +1207,7 @@ export default function App() {
     shell: ['Shell 集成', `已安装：${state.snapshot.status.shellIntegration?.installed ? '是' : '否'}`, `bashrc 路径：${state.snapshot.status.shellIntegration?.bashrcPath || '无'}`, `Codex 封装：${state.snapshot.status.shellIntegration?.codexWrapper ? '已启用' : '未启用'}`, `同账号复用：${formatSessionReuseState(state.snapshot.status.sessionReuse?.state)}`, `${state.snapshot.status.sessionReuse?.label || '建议在服务器安装 bash Shell 集成，以复用同账号会话的 VPN。'}`, '', ...shellGuide, '', '动作：Enter 或 b 安装 bashrc 配置块 | n 卸载 bashrc 配置块'],
     logs: ['日志与诊断', `日志文件：${state.snapshot.status.logFile}`, `主题：${state.snapshot.status.theme}`, `代理模式：${state.snapshot.status.proxyMode}`, `端口来源：${state.snapshot.status.portSource}`, `迁移状态：${state.snapshot.status.migration.migrationStatus}`, '', '动作：r 刷新 | l 显示日志路径']
   };
-  const contentLines = section.id === 'subscriptions' ? subscriptionLines : section.id === 'appearance' ? appearanceLines : section.id === 'latency' ? latencyLines : listLines({
+  const contentLines = section.id === 'overview' ? overviewPanel.lines : section.id === 'subscriptions' ? subscriptionLines : section.id === 'appearance' ? appearanceLines : section.id === 'latency' ? latencyLines : listLines({
     title: pageContent[section.id]?.[0] || '总览',
     items: (pageContent[section.id] || pageContent.overview).slice(1).map((text, index) => ({
       id: `${section.id}-${index}`,
@@ -1217,7 +1311,7 @@ export default function App() {
       children: padText('Tab 切换区域  Enter 执行动作或激活订阅  / 搜索  f 协议筛选  ? 帮助  q 退出', dimensions.width)
     }), /*#__PURE__*/_jsx(Text, {
       ...toneProps(previewThemeName, 'normal'),
-      children: padText('i 初始化  a 添加订阅  y 同步  s 启动  d 测速  p 端口模式  b bashrc  x 删除订阅', dimensions.width)
+      children: padText('i 初始化  a 添加订阅  e 修改订阅  y 同步  s 启动  d 测速  p 端口模式  b bashrc  x 删除订阅', dimensions.width)
     }), /*#__PURE__*/_jsx(Text, {
       ...toneProps(previewThemeName, 'normal'),
       children: padText(state.searchMode ? `搜索中 | 当前区域 ${state.activePane === 'nav' ? '导航' : section.label}` : `当前焦点 ${state.activePane === 'nav' ? '导航' : '内容'} | 当前页面 ${section.label}`, dimensions.width)

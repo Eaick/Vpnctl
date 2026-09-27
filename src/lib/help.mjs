@@ -25,6 +25,11 @@
     example: 'vpnctl add-sub --url "https://example.com/sub"'
   },
   {
+    command: 'vpnctl edit-sub',
+    meaning: '按 ID 修改订阅名称、远程 URL 或本地 YAML 路径；新来源验证成功后才保存。',
+    example: 'vpnctl edit-sub --id abc123 --file "/srv/vpn/nodes.yaml" --name "我的订阅"'
+  },
+  {
     command: 'vpnctl sync',
     meaning: '\u540c\u6b65\u5f53\u524d\u6fc0\u6d3b\u8ba2\u9605\uff0c\u751f\u6210\u672c\u5730 provider\uff0c\u5e76\u628a\u53d7\u7ba1\u914d\u7f6e\u5e94\u7528\u5230\u8fd0\u884c\u4e2d\u7684 mihomo\u3002',
     example: 'vpnctl sync'
@@ -74,6 +79,7 @@ const TUI_HELP_SECTIONS = [
       'i: \u521d\u59cb\u5316\u8fd0\u884c\u73af\u5883',
       'u: \u8fc1\u79fb\u65e7\u7248\u5b89\u88c5',
       'a: \u6dfb\u52a0\u8ba2\u9605 URL \u6216 YAML',
+      'e: 修改当前订阅名称、URL 或 YAML 文件路径',
       'x: \u5220\u9664\u5f53\u524d\u8ba2\u9605\uff08\u5e26\u786e\u8ba4\u6846\uff09',
       'y: \u540c\u6b65\u5f53\u524d\u6fc0\u6d3b\u8ba2\u9605\u5e76\u5e94\u7528\u5230\u8fd0\u884c\u6001',
       's: \u542f\u52a8 mihomo',
@@ -83,7 +89,8 @@ const TUI_HELP_SECTIONS = [
       'p: \u4fee\u6539\u7aef\u53e3\u6a21\u5f0f\u4e0e\u7aef\u53e3\uff0c\u652f\u6301 mix / separate',
       'b: \u5b89\u88c5 bashrc \u7247\u6bb5',
       'n: \u5378\u8f7d bashrc \u7247\u6bb5',
-      'r: \u5237\u65b0\u9762\u677f',
+      '\u603b\u89c8\u5185\u5bb9\u533a\u4e0a\u4e0b\u952e: \u6eda\u52a8\u67e5\u770b\u5361\u7247',
+      'r: \u5237\u65b0\u9762\u677f\u548c\u603b\u89c8\u7f51\u7edc\u68c0\u6d4b',
       'l: \u663e\u793a\u65e5\u5fd7\u6587\u4ef6\u8def\u5f84',
       'Google / OpenAI / YouTube: \u53ef\u5728\u6d4b\u901f\u9875\u5207\u6362\u6d4b\u901f\u76ee\u6807'
     ]

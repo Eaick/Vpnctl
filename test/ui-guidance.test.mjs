@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createAddSubscriptionModal,
+  createEditSubscriptionModal,
   createDeleteSubscriptionModal,
   createInitProgressModal,
   createPortModal,
@@ -81,6 +82,10 @@ test('wizard modal helpers expose mode-aware fields and option cycling', () => {
   const subModal = createAddSubscriptionModal();
   assert.equal(subModal.fields[0].key, 'sourceType');
   assert.equal(cycleModalFieldOption(subModal.fields[0], 1), 'file');
+
+  const editModal = createEditSubscriptionModal({ id: 'sub-1', type: 'local', source: '/srv/nodes.yaml', displayName: 'A' });
+  assert.equal(editModal.subscriptionId, 'sub-1');
+  assert.deepEqual(editModal.fields.map((field) => field.value), ['file', '/srv/nodes.yaml', 'A']);
 
   const portModal = createPortModal(createSnapshot());
   assert.equal(portModal.fields[0].key, 'proxyMode');

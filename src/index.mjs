@@ -54,6 +54,7 @@ async function main() {
     cmdEnv,
     cmdDoctor,
     cmdAddSub,
+    cmdEditSub,
     cmdListSubs,
     cmdSync,
     cmdRemoveSub,
@@ -131,6 +132,8 @@ async function main() {
     await cmdAddSub({ url: flags.url, file: flags.file, name: flags.name });
   } else if (command === 'list-subs') {
     await cmdListSubs();
+  } else if (command === 'edit-sub') {
+    await cmdEditSub({ id: flags.id, url: flags.url, file: flags.file, name: flags.name });
   } else if (command === 'sync') {
     await cmdSync({ id: flags.id });
   } else if (command === 'remove-sub') {

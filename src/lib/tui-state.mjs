@@ -16,7 +16,7 @@ export function createInitialTuiState(snapshot) {
     protocolFilter: 'all',
     notice: {
       tone: 'accent',
-      text: 'Ready'
+      text: '就绪'
     },
     busy: false
   };

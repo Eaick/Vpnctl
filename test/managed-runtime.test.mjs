@@ -1,9 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getManagedRuntimeStatus } from '../src/lib/managed-runtime.mjs';
 import { writeRuntimeLock } from '../src/lib/runtime-lock.mjs';
+import { getProcessIdentity } from '../src/lib/process-identity.mjs';
 
 const runtimeRoot = path.join(process.cwd(), '.tmp-managed-runtime-test');
 const config = {
@@ -13,6 +15,8 @@ const config = {
   dataDir: path.join(runtimeRoot, 'data'),
   pidFile: path.join(runtimeRoot, 'data', 'mihomo.pid'),
   lockFile: path.join(runtimeRoot, 'data', 'runtime-lock.json'),
+  mihomoBin: process.execPath,
+  mihomoDir: path.join(runtimeRoot, 'config'),
   httpProxy: 'http://127.0.0.1:27890',
   socksProxy: 'socks5://127.0.0.1:27890',
   mihomoApi: 'http://127.0.0.1:29090'
@@ -47,9 +51,15 @@ test('getManagedRuntimeStatus marks api-only responses as foreign instances', as
 
 test('getManagedRuntimeStatus only treats own pid and lock as managed runtime', async () => {
   const originalFetch = global.fetch;
-  const pid = process.pid;
-  await fs.writeFile(config.pidFile, String(pid), 'utf8');
-  await writeRuntimeLock(config, pid);
+  const child = spawn(process.execPath, [
+    '-e', 'setInterval(() => {}, 1000)', '--', '-d', config.mihomoDir
+  ], { stdio: 'ignore' });
+  await new Promise((resolve, reject) => {
+    child.once('spawn', resolve);
+    child.once('error', reject);
+  });
+  await fs.writeFile(config.pidFile, String(child.pid), 'utf8');
+  await writeRuntimeLock(config, child.pid, await getProcessIdentity(child.pid));
   global.fetch = async () => ({
     ok: true,
     headers: new Headers({ 'content-type': 'application/json' }),
@@ -60,9 +70,11 @@ test('getManagedRuntimeStatus only treats own pid and lock as managed runtime', 
     const status = await getManagedRuntimeStatus(config);
     assert.equal(status.pidAlive, true);
     assert.equal(status.lockOwned, true);
+    assert.equal(status.processOwned, true);
     assert.equal(status.managedApiAlive, true);
     assert.equal(status.foreignApiAlive, false);
   } finally {
+    child.kill();
     global.fetch = originalFetch;
   }
 });

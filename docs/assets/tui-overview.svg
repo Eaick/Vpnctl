@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800" role="img" aria-labelledby="title desc">
+  <title id="title">VPNCTL 0.1 总览卡片示意</title>
+  <desc id="desc">运行状态、端口、内存、流量、网络检测和代理链路的双列卡片。IP 为文档保留地址，其余数据均为虚构。</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#081923"/><stop offset="1" stop-color="#101d2c"/></linearGradient>
+    <style>text{font-family:Consolas,'Noto Sans Mono CJK SC',monospace;font-size:19px;fill:#d5e5ea}.title{font-size:24px;font-weight:700;fill:#6bd6ea}.dim{fill:#869da8;font-size:17px}.selected{fill:#08202b;font-weight:700}.ok{fill:#7dd8b6}.panel{fill:#0d2330;stroke:#426b7a;stroke-width:1.5}.card{fill:#102c3a;stroke:#426b7a;stroke-width:1.5}</style>
+  </defs>
+  <rect width="1280" height="800" fill="url(#bg)"/>
+  <text x="32" y="42" class="title">VPNCTL  0.1</text><text x="1238" y="42" text-anchor="end" class="dim">界面示意 · 数据均为虚构</text>
+  <text x="32" y="74">页面:总览 | 接口:在线 | 进程:示例 | 订阅:示例订阅 A</text>
+  <text x="32" y="104">提供方:示例订阅 A | 已连接:示例节点 01</text>
+  <text x="32" y="134" class="dim">模式:mix | mixed:7890 | api:9090 | 来源:自动探测</text>
+  <text x="32" y="164" class="ok">面板已刷新；网络数据按需采样，不持续请求。</text>
+  <rect x="24" y="188" width="230" height="476" rx="8" class="panel"/>
+  <text x="42" y="223" class="title">页面 (10)</text>
+  <rect x="36" y="242" width="206" height="34" rx="3" fill="#6bd6ea"/>
+  <text x="44" y="267" class="selected">&gt; 总览</text>
+  <text x="44" y="305">运行状态</text><text x="44" y="343">订阅管理</text><text x="44" y="381">节点与策略组</text>
+  <text x="44" y="419">测速目标</text><text x="44" y="457">端口与环境</text><text x="44" y="495">主题与外观</text>
+  <text x="44" y="533">安装与升级</text><text x="44" y="571">Shell 集成</text><text x="44" y="609">日志与诊断</text>
+  <rect x="274" y="188" width="982" height="476" rx="8" class="panel"/>
+  <text x="296" y="223" class="title">总览卡片</text><text x="1228" y="223" text-anchor="end" class="dim">↑↓ 滚动查看</text>
+  <rect x="290" y="244" width="468" height="126" rx="8" class="card"/>
+  <text x="312" y="278" class="title">运行状态</text><text x="312" y="314" class="ok">Mihomo 在线 · 规则模式</text><text x="312" y="346">激活订阅：示例订阅 A</text>
+  <rect x="774" y="244" width="466" height="126" rx="8" class="card"/>
+  <text x="796" y="278" class="title">端口状态</text><text x="796" y="314">混合端口 7890 · 监听中</text><text x="796" y="346">API 端口 9090 · 监听中</text>
+  <rect x="290" y="384" width="468" height="126" rx="8" class="card"/>
+  <text x="312" y="418" class="title">流量与连接</text><text x="312" y="454">上传 12KB/s · 下载 240KB/s</text><text x="312" y="486">累计 8MB / 64MB · 连接 6</text>
+  <rect x="774" y="384" width="466" height="126" rx="8" class="card"/>
+  <text x="796" y="418" class="title">内存占用</text><text x="796" y="454">VPNCTL 48MB</text><text x="796" y="486">Mihomo 72MB</text>
+  <rect x="290" y="524" width="468" height="126" rx="8" class="card"/>
+  <text x="312" y="558" class="title">网络检测</text><text x="312" y="594">本地 IP 192.0.2.10</text><text x="312" y="626">代理出口 203.0.113.20</text>
+  <rect x="774" y="524" width="466" height="126" rx="8" class="card"/>
+  <text x="796" y="558" class="title">当前代理链路</text><text x="796" y="594">VPNCTL → 示例订阅 A</text><text x="796" y="626">→ 示例节点 01</text>
+  <path d="M24 686H1256" stroke="#426b7a"/>
+  <text x="32" y="718" class="dim">Tab 切换区域   ↑↓ 滚动卡片   Enter 执行下一步   ? 帮助   q 退出</text>
+  <text x="32" y="750">r 刷新总览   i 初始化   a 添加订阅   y 同步   s 启动   k 停止</text>
+  <text x="32" y="780" class="dim">示意图非真实运行截图，IP 使用文档保留地址，未包含个人设备信息。</text>
+</svg>

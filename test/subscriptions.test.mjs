@@ -6,6 +6,7 @@ import { getProjectRoot } from '../src/lib/runtime.mjs';
 import { createConfig } from '../src/lib/config.mjs';
 import {
   addSubscriptionFromFile,
+  editSubscription,
   activateSubscription,
   ensureSubscriptionStore,
   loadSubscriptions,
@@ -83,6 +84,22 @@ test('addSubscriptionFromFile rejects duplicate content and renames same display
   assert.equal(second.displayName, 'A (2)');
 });
 
+test('addSubscriptionFromFile rejects files without nodes and preserves existing subscriptions', async () => {
+  const config = createConfig('dev');
+  await ensureSubscriptionStore(config);
+  const existing = await addSubscriptionFromFile(fixtureA, 'Existing', config);
+  const before = await fs.readFile(config.subscriptionsFile, 'utf8');
+  await fs.writeFile(fixtureB, '# Not a subscription\n', 'utf8');
+
+  await assert.rejects(
+    addSubscriptionFromFile(fixtureB, 'Invalid', config),
+    /本地订阅未包含可识别的节点，未添加/
+  );
+
+  assert.equal(await fs.readFile(config.subscriptionsFile, 'utf8'), before);
+  assert.deepEqual((await loadSubscriptions(config)).map((item) => item.id), [existing.id]);
+});
+
 test('syncSubscriptions populates node metadata for local files', async () => {
   const config = createConfig('dev');
   await ensureSubscriptionStore(config);
@@ -103,10 +120,101 @@ test('syncSubscriptions populates node metadata for local files', async () => {
   await assert.doesNotReject(fs.access(config.generatedConfigFile));
 });
 
+test('editSubscription renames without syncing and updates the active group', async () => {
+  const config = createConfig('dev');
+  const created = await addSubscriptionFromFile(fixtureA, 'Original', config);
+  await syncSubscriptions({ id: created.id }, config);
+  const before = (await loadSubscriptions(config))[0];
+  const providerContent = await fs.readFile(before.providerPath, 'utf8');
+
+  const edited = await editSubscription(created.id, { name: 'Renamed' }, config);
+  assert.equal(edited.id, created.id);
+  assert.equal(edited.providerKey, created.providerKey);
+  assert.equal(edited.lastSyncedAt, before.lastSyncedAt);
+  assert.equal(await fs.readFile(before.providerPath, 'utf8'), providerContent);
+  const rendered = YAML.parse(await fs.readFile(config.generatedConfigFile, 'utf8'));
+  assert.equal(rendered['proxy-groups'][0].name, 'Renamed');
+});
+
+test('editSubscription validates new local source before replacing cached nodes', async () => {
+  const config = createConfig('dev');
+  const created = await addSubscriptionFromFile(fixtureA, 'Local', config);
+  await syncSubscriptions({ id: created.id }, config);
+  const before = (await loadSubscriptions(config))[0];
+  const oldCache = await fs.readFile(before.cachePath, 'utf8');
+  await fs.writeFile(fixtureB, '# invalid\n', 'utf8');
+
+  await assert.rejects(editSubscription(created.id, { file: fixtureB, name: 'Changed' }, config), /未包含可识别的节点/);
+  assert.equal((await loadSubscriptions(config))[0].displayName, 'Local');
+  assert.equal((await loadSubscriptions(config))[0].source, fixtureA);
+  assert.equal(await fs.readFile(before.cachePath, 'utf8'), oldCache);
+
+  await fs.writeFile(fixtureB, 'proxies:\n  - name: 美国 01\n    type: trojan\n', 'utf8');
+  const edited = await editSubscription(created.id, { file: fixtureB, name: 'Changed' }, config);
+  assert.equal(edited.providerKey, created.providerKey);
+  assert.equal(edited.source, fixtureB);
+  assert.deepEqual(edited.nodes, [{ name: '美国 01', protocol: 'trojan' }]);
+  assert.match(await fs.readFile(before.providerPath, 'utf8'), /美国 01/);
+});
+
+test('editSubscription can switch a local subscription to a remote URL', async () => {
+  const config = createConfig('dev');
+  const created = await addSubscriptionFromFile(fixtureA, 'Local', config);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('proxies:\n  - name: Remote\n    type: vless\n');
+  try {
+    const edited = await editSubscription(created.id, { url: 'https://example.com/sub#fragment' }, config);
+    assert.equal(edited.type, 'remote');
+    assert.equal(edited.source, 'https://example.com/sub');
+    assert.deepEqual(edited.nodes, [{ name: 'Remote', protocol: 'vless' }]);
+    assert.equal((await loadSubscriptions(config))[0].enabled, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('editSubscription rejects invalid fields and duplicates without persisting changes', async () => {
+  const config = createConfig('dev');
+  const created = await addSubscriptionFromFile(fixtureA, 'First', config);
+  await addSubscriptionFromFile(fixtureB, 'Second', config);
+  const before = await fs.readFile(config.subscriptionsFile, 'utf8');
+  for (const changes of [
+    { name: '' }, { name: true }, { name: 'Second' }, { name: 'GLOBAL' },
+    { url: 'ftp://example.com/sub' }, { file: '' },
+    { file: fixtureB }, { url: 'https://example.com/sub', file: fixtureB }
+  ]) {
+    await assert.rejects(editSubscription(created.id, changes, config));
+    assert.equal(await fs.readFile(config.subscriptionsFile, 'utf8'), before);
+  }
+});
+
+test('editSubscription preserves both caches and metadata on failed remote validation', async () => {
+  const config = createConfig('dev');
+  const created = await addSubscriptionFromFile(fixtureA, 'Original', config);
+  await syncSubscriptions({ id: created.id }, config);
+  const before = (await loadSubscriptions(config))[0];
+  const paths = [config.subscriptionsFile, config.generatedConfigFile, before.cachePath, before.providerPath];
+  const contents = await Promise.all(paths.map((filepath) => fs.readFile(filepath, 'utf8')));
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const fetchResult of [
+      async () => { throw new Error('network failed'); },
+      async () => new Response('unavailable', { status: 503 }),
+      async () => new Response('proxies: []')
+    ]) {
+      globalThis.fetch = fetchResult;
+      await assert.rejects(editSubscription(created.id, { url: 'https://example.com/new', name: 'Changed' }, config));
+      assert.deepEqual(await Promise.all(paths.map((filepath) => fs.readFile(filepath, 'utf8'))), contents);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('writeManagedConfig uses local provider file after remote subscription sync', async () => {
   const config = createConfig('dev');
   await ensureSubscriptionStore(config);
-  const remoteProviderPath = path.join(config.providersDir, 'flybit-abc123.yaml');
+  const remoteProviderPath = path.join(config.providersDir, 'example-abc123.yaml');
   await fs.mkdir(path.dirname(remoteProviderPath), { recursive: true });
   await fs.writeFile(remoteProviderPath, 'proxies:\n  - name: 日本 01\n', 'utf8');
 
@@ -115,8 +223,8 @@ test('writeManagedConfig uses local provider file after remote subscription sync
       id: 'remote001',
       type: 'remote',
       source: 'https://example.com/sub',
-      displayName: '赔钱',
-      providerKey: 'flybit-abc123',
+      displayName: '示例订阅',
+      providerKey: 'example-abc123',
       contentHash: '',
       lastSyncedAt: new Date().toISOString(),
       enabled: true,
@@ -132,7 +240,7 @@ test('writeManagedConfig uses local provider file after remote subscription sync
   await writeManagedConfig(config);
 
   const rendered = YAML.parse(await fs.readFile(config.generatedConfigFile, 'utf8'));
-  assert.deepEqual(rendered['proxy-providers']['flybit-abc123'], {
+  assert.deepEqual(rendered['proxy-providers']['example-abc123'], {
     type: 'file',
     path: remoteProviderPath.replace(/\\/g, '/')
   });

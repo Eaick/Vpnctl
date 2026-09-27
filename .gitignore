@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .sandbox/
+VPN测试/
 *.log
 config.yaml
 .env

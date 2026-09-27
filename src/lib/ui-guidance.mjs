@@ -124,6 +124,26 @@ export function createAddSubscriptionModal() {
   };
 }
 
+export function createEditSubscriptionModal(subscription) {
+  return {
+    type: 'edit-sub',
+    title: '修改订阅',
+    prompt: `修改“${subscription.displayName}”的名称或来源。`,
+    subscriptionId: subscription.id,
+    fields: [
+      { key: 'sourceType', label: '来源类型', value: subscription.type === 'local' ? 'file' : 'url', options: ['url', 'file'] },
+      { key: 'source', label: 'URL / YAML 路径', value: subscription.source },
+      { key: 'alias', label: '订阅名称', value: subscription.displayName }
+    ],
+    notes: [
+      '来源变更后先验证节点，再更新缓存与 Provider。',
+      '仅修改名称不会重新下载订阅。'
+    ],
+    activeField: 0,
+    submitText: 'Enter 保存 | Tab/上下切换 | 左右切换来源 | Ctrl+U 清空 | Esc 取消'
+  };
+}
+
 export function createPortModal(snapshot, proxyMode = resolveProxyMode(snapshot)) {
   return buildPortModalBase(
     'set-ports',

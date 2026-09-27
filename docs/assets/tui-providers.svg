@@ -1,47 +1,46 @@
-<svg width="1280" height="720" viewBox="0 0 1280 720" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1280" height="720" fill="#0B1020"/>
-  <rect x="40" y="40" width="1200" height="640" rx="24" fill="#111827" stroke="#1F2937" stroke-width="2"/>
-  <rect x="68" y="68" width="1144" height="52" rx="14" fill="#0F172A"/>
-  <text x="94" y="101" fill="#7DD3FC" font-family="Consolas, 'Courier New', monospace" font-size="26" font-weight="700">VPNCTL  Fast lanes. Calm terminal.  theme:gemini</text>
-
-  <rect x="68" y="146" width="240" height="486" rx="18" fill="#0F172A" stroke="#38BDF8" stroke-width="2"/>
-  <text x="92" y="183" fill="#E5E7EB" font-family="Consolas, 'Courier New', monospace" font-size="24" font-weight="700">页面 (10)</text>
-  <text x="92" y="228" fill="#CBD5E1" font-family="Consolas, 'Courier New', monospace" font-size="22">  总览</text>
-  <text x="92" y="266" fill="#CBD5E1" font-family="Consolas, 'Courier New', monospace" font-size="22">  运行状态</text>
-  <text x="92" y="304" fill="#CBD5E1" font-family="Consolas, 'Courier New', monospace" font-size="22">  订阅管理</text>
-  <rect x="84" y="324" width="208" height="36" rx="10" fill="#7DD3FC"/>
-  <text x="92" y="349" fill="#0F172A" font-family="Consolas, 'Courier New', monospace" font-size="22" font-weight="700">&gt; 节点与策略组</text>
-
-  <rect x="332" y="146" width="280" height="486" rx="18" fill="#0F172A" stroke="#38BDF8" stroke-width="2"/>
-  <text x="360" y="183" fill="#E5E7EB" font-family="Consolas, 'Courier New', monospace" font-size="24" font-weight="700">Providers (3)</text>
-
-  <rect x="350" y="214" width="244" height="50" rx="12" fill="#111827"/>
-  <text x="370" y="246" fill="#FDE68A" font-family="Consolas, 'Courier New', monospace" font-size="24">* GLOBAL                  5</text>
-
-  <rect x="350" y="278" width="244" height="50" rx="12" fill="#7DD3FC"/>
-  <text x="370" y="310" fill="#0F172A" font-family="Consolas, 'Courier New', monospace" font-size="24" font-weight="700">&gt;* VPNCTL                 3</text>
-
-  <rect x="350" y="342" width="244" height="50" rx="12" fill="#111827"/>
-  <text x="370" y="374" fill="#FDE68A" font-family="Consolas, 'Courier New', monospace" font-size="24">* Flybit                 77</text>
-
-  <rect x="636" y="146" width="576" height="486" rx="18" fill="#0F172A" stroke="#38BDF8" stroke-width="2"/>
-  <text x="664" y="183" fill="#E5E7EB" font-family="Consolas, 'Courier New', monospace" font-size="24" font-weight="700">Nodes (3) | GStatic | ALL</text>
-
-  <rect x="654" y="214" width="540" height="58" rx="14" fill="#7DD3FC"/>
-  <text x="676" y="250" fill="#0F172A" font-family="Consolas, 'Courier New', monospace" font-size="22" font-weight="700">&gt;* 日本 01                         VMESS   134ms</text>
-
-  <rect x="654" y="286" width="540" height="58" rx="14" fill="#111827"/>
-  <text x="676" y="322" fill="#F8FAFC" font-family="Consolas, 'Courier New', monospace" font-size="22">  香港 02                         TROJAN   92ms</text>
-
-  <rect x="654" y="358" width="540" height="58" rx="14" fill="#111827"/>
-  <text x="676" y="394" fill="#F8FAFC" font-family="Consolas, 'Courier New', monospace" font-size="22">  新加坡 03                       VLESS   101ms</text>
-
-  <rect x="654" y="452" width="540" height="138" rx="16" fill="#111827"/>
-  <text x="680" y="492" fill="#E5E7EB" font-family="Consolas, 'Courier New', monospace" font-size="22" font-weight="700">说明</text>
-  <text x="680" y="530" fill="#CBD5E1" font-family="Consolas, 'Courier New', monospace" font-size="20">- Providers 只显示当前激活订阅真正生效的运行态</text>
-  <text x="680" y="564" fill="#CBD5E1" font-family="Consolas, 'Courier New', monospace" font-size="20">- f: 按协议筛选，支持 VLESS / VMESS / TROJAN / SS</text>
-  <text x="680" y="598" fill="#CBD5E1" font-family="Consolas, 'Courier New', monospace" font-size="20">- d: 对当前 provider 整组测速</text>
-
-  <rect x="68" y="648" width="1144" height="14" rx="7" fill="#111827"/>
-  <text x="70" y="676" fill="#94A3B8" font-family="Consolas, 'Courier New', monospace" font-size="18">Tab 切换区域  Enter 切换节点  / 搜索  f 协议筛选  d 整组测速  q 退出</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800" role="img" aria-labelledby="title desc">
+  <title id="title">VPNCTL 0.1 节点卡片示意</title>
+  <desc id="desc">示例订阅的六张虚构节点卡片，显示协议及延迟。GLOBAL 与 VPNCTL 为内部策略组，不是机场名称。</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#081923"/><stop offset="1" stop-color="#101d2c"/></linearGradient>
+    <style>text{font-family:Consolas,'Noto Sans Mono CJK SC',monospace;font-size:19px;fill:#d5e5ea}.title{font-size:24px;font-weight:700;fill:#6bd6ea}.dim{fill:#869da8;font-size:17px}.selected{fill:#08202b;font-weight:700}.ok{fill:#7dd8b6}.panel{fill:#0d2330;stroke:#426b7a;stroke-width:1.5}.card{fill:#102c3a;stroke:#426b7a;stroke-width:1.5}</style>
+  </defs>
+  <rect width="1280" height="800" fill="url(#bg)"/>
+  <text x="32" y="42" class="title">VPNCTL  0.1</text><text x="1238" y="42" text-anchor="end" class="dim">界面示意 · 数据均为虚构</text>
+  <text x="32" y="74">页面:节点与策略组 | 接口:在线 | 进程:示例 | 订阅:示例订阅 A</text>
+  <text x="32" y="104">提供方:示例订阅 A | 光标:示例节点 01 | 已连接:示例节点 01</text>
+  <text x="32" y="134" class="dim">测速目标:GStatic | 协议:全部 | mix | mixed:7890 | api:9090</text>
+  <text x="32" y="164" class="ok">测速完成：6 / 6</text>
+  <rect x="24" y="188" width="218" height="476" rx="8" class="panel"/>
+  <text x="42" y="223" class="title">页面 (10)</text>
+  <text x="44" y="267">总览</text><text x="44" y="305">运行状态</text><text x="44" y="343">订阅管理</text>
+  <rect x="36" y="360" width="194" height="34" rx="3" fill="#6bd6ea"/>
+  <text x="44" y="385" class="selected">&gt; 节点与策略组</text>
+  <text x="44" y="423">测速目标</text><text x="44" y="461">端口与环境</text><text x="44" y="499">主题与外观</text>
+  <text x="44" y="537">安装与升级</text><text x="44" y="575">Shell 集成</text><text x="44" y="613">日志与诊断</text>
+  <rect x="258" y="188" width="228" height="476" rx="8" class="panel"/>
+  <text x="276" y="223" class="title">提供方 (3)</text>
+  <text x="276" y="273">GLOBAL</text><text x="460" y="273" text-anchor="end" class="dim">4</text>
+  <text x="276" y="313">VPNCTL</text><text x="460" y="313" text-anchor="end" class="dim">2</text>
+  <rect x="270" y="330" width="204" height="36" rx="3" fill="#6bd6ea"/>
+  <text x="280" y="355" class="selected">&gt; 示例订阅 A</text><text x="460" y="355" text-anchor="end" class="selected">6</text>
+  <text x="276" y="593" class="dim">GLOBAL / VPNCTL</text><text x="276" y="620" class="dim">为内部策略组</text>
+  <rect x="502" y="188" width="754" height="476" rx="8" class="panel"/>
+  <text x="524" y="223" class="title">节点 (6) · 协议:全部</text>
+  <rect x="518" y="248" width="354" height="120" rx="8" fill="#173f50" stroke="#6bd6ea" stroke-width="2"/>
+  <text x="540" y="282" class="title">&gt; * 示例节点 01</text><text x="540" y="316">协议 VLESS</text><text x="540" y="347" class="ok">延迟 86ms</text>
+  <rect x="886" y="248" width="354" height="120" rx="8" class="card"/>
+  <text x="908" y="282">示例节点 02</text><text x="908" y="316">协议 VMESS</text><text x="908" y="347" class="ok">延迟 112ms</text>
+  <rect x="518" y="384" width="354" height="120" rx="8" class="card"/>
+  <text x="540" y="418">示例节点 03</text><text x="540" y="452">协议 TROJAN</text><text x="540" y="483" class="ok">延迟 94ms</text>
+  <rect x="886" y="384" width="354" height="120" rx="8" class="card"/>
+  <text x="908" y="418">示例节点 04</text><text x="908" y="452">协议 SS</text><text x="908" y="483" class="ok">延迟 128ms</text>
+  <rect x="518" y="520" width="354" height="120" rx="8" class="card"/>
+  <text x="540" y="554">示例节点 05</text><text x="540" y="588">协议 VLESS</text><text x="540" y="619" class="ok">延迟 103ms</text>
+  <rect x="886" y="520" width="354" height="120" rx="8" class="card"/>
+  <text x="908" y="554">示例节点 06</text><text x="908" y="588">协议 TROJAN</text><text x="908" y="619" class="ok">延迟 157ms</text>
+  <path d="M24 686H1256" stroke="#426b7a"/>
+  <text x="32" y="718" class="dim">Tab 切换区域   Enter 切换节点   / 搜索   f 协议筛选   ? 帮助   q 退出</text>
+  <text x="32" y="750">d 测速   r 刷新   p 端口模式   s 启动   k 停止</text>
+  <text x="32" y="780" class="dim">示意图非真实运行截图；星号表示当前节点，所有延迟数值均为演示。</text>
 </svg>

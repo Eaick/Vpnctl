@@ -30,21 +30,21 @@ import {
   readPid,
   isPidAlive,
   startDetached,
-  stopByPid,
-  removePidFile,
+  stopManagedRuntime,
   tailLogHint,
   fileExists
 } from './lib/process.mjs';
 import {
   initializeRuntimeWithOptions,
   cleanSandboxRuntime,
-  summarizeRuntime,
-  setConfiguredPorts
+  summarizeRuntime
 } from './lib/install.mjs';
 import {
+  ensureSubscriptionStore,
   loadSubscriptions,
   addSubscriptionFromUrl,
   addSubscriptionFromFile,
+  editSubscription,
   activateSubscription,
   removeSubscription,
   syncSubscriptions,
@@ -57,7 +57,7 @@ import {
 } from './lib/migration.mjs';
 import { listKnownRuntimeLocks } from './lib/runtime-lock.mjs';
 import { formatInitProgressLine } from './lib/init-progress.mjs';
-import { applyManagedConfigToRuntime } from './lib/runtime-apply.mjs';
+import { applyManagedConfigToRuntime, configureRuntimePorts } from './lib/runtime-apply.mjs';
 import { getManagedRuntimeStatus } from './lib/managed-runtime.mjs';
 
 function sleep(ms) {
@@ -256,30 +256,16 @@ export async function cmdStart() {
 
 export async function cmdStop() {
   title('Stop mihomo');
-  const pid = await readPid();
-  if (!pid) {
+  const result = await stopManagedRuntime();
+  if (!result.pid) {
     warn('No pid file found.');
     return;
   }
-
-  const alive = await isPidAlive(pid);
-  if (!alive) {
-    warn('pid file exists but process is not alive. Removing stale pid file.');
-    await removePidFile();
+  if (result.stale) {
+    warn('pid file exists but process is not alive. Removed stale pid file.');
     return;
   }
-
-  await stopByPid(pid, { force: false });
-  await sleep(800);
-
-  if (await isPidAlive(pid)) {
-    warn('SIGTERM did not stop mihomo. Escalating to SIGKILL.');
-    await stopByPid(pid, { force: true });
-    await sleep(300);
-  }
-
-  await removePidFile();
-  ok(`mihomo stopped: pid=${pid}`);
+  ok(`mihomo stopped: pid=${result.pid}`);
 }
 
 export async function cmdRestart() {
@@ -489,6 +475,19 @@ export async function cmdAddSub({ url, file, name } = {}) {
   info(applied.message);
 }
 
+export async function cmdEditSub({ id, url, file, name } = {}) {
+  if (!id) throw new Error('edit-sub requires --id');
+  if (url === undefined && file === undefined && name === undefined) {
+    throw new Error('edit-sub requires --url, --file or --name');
+  }
+  title('Edit subscription');
+  const currentConfig = createConfig();
+  const updated = await editSubscription(id, { url, file, name }, currentConfig);
+  const applied = await applyManagedConfigToRuntime(currentConfig);
+  ok(`${updated.displayName} (${updated.id})`);
+  info(applied.message);
+}
+
 export async function cmdListSubs() {
   const currentConfig = createConfig();
   title('Subscriptions');
@@ -520,6 +519,9 @@ export async function cmdSync({ id } = {}) {
     }
   }
   info(applied.message);
+  if (results.some((item) => !item.ok)) {
+    throw new Error('部分订阅同步失败，请检查上方错误；已保留上次成功同步的缓存');
+  }
 }
 
 export async function cmdRemoveSub({ id } = {}) {
@@ -540,7 +542,7 @@ export async function cmdConfigSetPorts({ proxyMode, mixed, http, socks, api } =
     httpPort: http,
     socksPort: socks
   });
-  const result = await setConfiguredPorts({
+  const result = await configureRuntimePorts({
     ports: {
       ...(mixed ? { mixed } : {}),
       ...(http ? { http } : {}),
@@ -550,10 +552,10 @@ export async function cmdConfigSetPorts({ proxyMode, mixed, http, socks, api } =
     ...(requestedProxyMode ? { proxyMode: requestedProxyMode } : {}),
     reason: 'custom'
   });
-  await writeManagedConfig(result.config);
   console.log(`proxy mode: ${result.config.proxyMode}`);
   console.log(`port source: ${getPortSourceLabel(result.portSource)}`);
   console.log(result.portSnippet);
+  info(result.applied ? 'mihomo 已在新端口重启' : 'mihomo 未运行，新端口将在下次启动时生效');
 }
 
 export async function cmdShellInstall({ bashrcPath } = {}) {

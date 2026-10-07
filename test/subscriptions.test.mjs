@@ -6,6 +6,7 @@ import { getProjectRoot } from '../src/lib/runtime.mjs';
 import { createConfig } from '../src/lib/config.mjs';
 import {
   addSubscriptionFromFile,
+  addSubscriptionFromUrl,
   editSubscription,
   activateSubscription,
   ensureSubscriptionStore,
@@ -118,6 +119,43 @@ test('syncSubscriptions populates node metadata for local files', async () => {
   ]);
   assert.match(subscriptions[0].providerPath.replace(/\\/g, '/'), /\/config\/providers\//);
   await assert.doesNotReject(fs.access(config.generatedConfigFile));
+});
+
+test('remote subscriptions negotiate native YAML and preserve Trojan and AnyTLS connection settings', async () => {
+  const config = createConfig('dev');
+  const created = await addSubscriptionFromUrl('https://example.com/sub', 'Remote', config);
+  const nativeContent = YAML.stringify({ proxies: [
+    { name: 'Trojan', type: 'trojan', server: 'native.example.com', port: 443, password: 'test-password', sni: 'tls.example.com', 'client-fingerprint': 'firefox' },
+    { name: 'AnyTLS', type: 'anytls', server: 'anytls.example.com', port: 8443, password: 'test-password', sni: 'tls.example.com', 'client-fingerprint': 'chrome' }
+  ] });
+  const genericContent = Buffer.from('trojan://test-password@other.example.com:443#Trojan').toString('base64');
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, options) => new Response(
+    options?.headers?.['User-Agent'] === 'clash.meta' ? nativeContent : genericContent
+  );
+  try {
+    const results = await syncSubscriptions({ id: created.id }, config);
+    assert.equal(results[0].ok, true);
+    const [subscription] = await loadSubscriptions(config);
+    assert.deepEqual(subscription.nodes, [
+      { name: 'Trojan', protocol: 'trojan' },
+      { name: 'AnyTLS', protocol: 'anytls' }
+    ]);
+    assert.equal(await fs.readFile(subscription.providerPath, 'utf8'), nativeContent);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('pending remote providers use the same native format request header', async () => {
+  const config = createConfig('dev');
+  const created = await addSubscriptionFromUrl('https://example.com/sub', 'Remote', config);
+  const { writeManagedConfig } = await import('../src/lib/subscriptions.mjs');
+  await writeManagedConfig(config);
+  const rendered = YAML.parse(await fs.readFile(config.generatedConfigFile, 'utf8'));
+  assert.deepEqual(rendered['proxy-providers'][created.providerKey].header, {
+    'User-Agent': ['clash.meta']
+  });
 });
 
 test('editSubscription renames without syncing and updates the active group', async () => {

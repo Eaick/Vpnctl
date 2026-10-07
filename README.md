@@ -82,6 +82,22 @@ npm link
 vpnctl
 ```
 
+## 更新已安装版本
+
+先退出旧 TUI，在原来安装 VPNCTL 的源码目录执行：
+
+```bash
+git pull --ff-only && bash scripts/vpnctl.sh install
+```
+
+这条命令会拉取新版，再执行 `npm install`、`npm run build`、`npm link`。更新完成后输入 `vpnctl` 即可使用；现有订阅、端口、受管 Mihomo 和个人运行数据会保留。更新不需要卸载，也不要重新执行 `vpnctl init`。
+
+本次修复了部分机场按客户端类型返回不同配置的问题。更新后请在订阅页激活要使用的订阅，按 `y` 重新同步，再进入节点页按 `d` 测速；仅更新程序不会替换之前保存的订阅缓存。
+
+若服务器无法访问 GitHub，可在能联网的电脑上下载新版源码，上传并覆盖原源码目录中的项目文件，然后执行 `bash scripts/vpnctl.sh install`。如果上传的是已经构建好的完整 `dist/`，替换原目录的 `dist/` 后即可重新打开 TUI；新增或变更依赖时仍需安装依赖。
+
+如果更新时 npm 报错连接已关闭的本地代理端口，先在当前终端执行 `vpnoff`；npm 自己保存的代理还需检查 `npm config get proxy` 和 `npm config get https-proxy`。Mihomo 仍在运行且下载需要代理时，可执行 `vpnon` 获取当前有效端口。若 Git 提示本地修改或无法快进，请保留并处理本地修改，不要用强制覆盖命令更新。
+
 ## 离线安装 Mihomo
 
 服务器无法访问 GitHub 时，可以在能联网的电脑上下载 Mihomo，再上传到服务器。以下用于 Linux x64 的首次安装，假设已完成上面的 VPNCTL 安装，并使用默认运行目录。

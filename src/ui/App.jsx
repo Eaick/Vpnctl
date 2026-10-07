@@ -486,7 +486,7 @@ export default function App() {
     await stopManagedRuntime(createConfig());
   };
   const measureProviderNodes = async (provider, target, nodeItems) => {
-    if (!provider || !target || !Array.isArray(nodeItems) || nodeItems.length === 0) return 0;
+    if (!provider || !target || !Array.isArray(nodeItems) || nodeItems.length === 0) return { okCount: 0, firstFailure: '' };
     updateState(next => {
       const liveProvider = next.snapshot.providers.find(item => item.id === provider.id);
       for (const liveNode of liveProvider?.nodes || []) {
@@ -497,6 +497,7 @@ export default function App() {
       }
     });
     let okCount = 0;
+    let firstFailure = '';
     for (let index = 0; index < nodeItems.length; index += LATENCY_CONCURRENCY) {
       const batch = nodeItems.slice(index, index + LATENCY_CONCURRENCY);
       const batchResults = await Promise.all(batch.map(async node => {
@@ -507,13 +508,15 @@ export default function App() {
           return {
             nodeId: node.id,
             delayMs: result.delayMs,
-            ok: typeof result.delayMs === 'number'
+            ok: typeof result.delayMs === 'number',
+            error: typeof result.delayMs === 'number' ? '' : '内核未返回延迟'
           };
-        } catch {
+        } catch (error) {
           return {
             nodeId: node.id,
             delayMs: null,
-            ok: false
+            ok: false,
+            error: error.message || String(error)
           };
         }
       }));
@@ -527,8 +530,10 @@ export default function App() {
         }
       });
       okCount += batchResults.filter(item => item.ok).length;
+      const failure = batchResults.find(item => !item.ok);
+      if (!firstFailure && failure) firstFailure = `${failure.nodeId}：${failure.error}`;
     }
-    return okCount;
+    return { okCount, firstFailure };
   };
   const runModal = async modal => {
     const currentConfig = createConfig();
@@ -1052,11 +1057,11 @@ export default function App() {
       const providerNodes = getNodes(state, provider);
       if (!provider || !providerNodes.length) return;
       await withBusy(async () => {
-        const okCount = await measureProviderNodes(provider, selectedLatencyTarget, providerNodes);
+        const { okCount, firstFailure } = await measureProviderNodes(provider, selectedLatencyTarget, providerNodes);
         updateState(next => {
-          setNotice(next, okCount > 0 ? 'success' : 'warn', `${selectedLatencyTarget.label} 测速完成：${okCount}/${providerNodes.length}`);
+          setNotice(next, firstFailure ? 'warn' : 'success', `${selectedLatencyTarget.label} 测速完成：${okCount}/${providerNodes.length}${firstFailure ? `；失败原因 ${firstFailure}` : ''}`);
         });
-      }, `${provider.label} ${selectedLatencyTarget.label} 整组测速完成`);
+      });
       return;
     }
     if (input === 'l') {

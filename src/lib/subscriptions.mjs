@@ -10,6 +10,9 @@ const PROTOCOL_ALIASES = {
   ssr: 'shadowsocksr'
 };
 
+// Request the Mihomo-native format from providers that negotiate by client.
+const SUBSCRIPTION_USER_AGENT = 'clash.meta';
+
 function normalizeActiveSubscriptions(items = [], preferredId = null) {
   if (!items.length) return [];
 
@@ -356,6 +359,9 @@ function buildRemoteProviderEntry(subscription) {
   return {
     type: 'http',
     url: subscription.source,
+    header: {
+      'User-Agent': [SUBSCRIPTION_USER_AGENT]
+    },
     path: toForwardSlash(subscription.providerPath),
     interval: 86400,
     'health-check': {
@@ -446,7 +452,7 @@ export async function writeManagedConfig(currentConfig = createConfig()) {
 async function loadRemoteSubscriptionContent(subscription) {
   const res = await fetch(subscription.source, {
     headers: {
-      'User-Agent': 'vpnctl-mihomo'
+      'User-Agent': SUBSCRIPTION_USER_AGENT
     }
   });
 

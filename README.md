@@ -15,9 +15,28 @@
   ╚═══╝  ╚═╝     ╚═╝  ╚═══╝ ╚═════╝   ╚═╝   ╚══════╝
 ```
 
+## 最新动态
+
+**2026-10-07 · VPNCTL 0.1 维护更新**
+
+- 修复部分机场根据客户端类型返回不同节点配置，导致 VPNCTL 测速显示 `ERR` 的兼容问题。
+- 订阅同步使用 `clash.meta` 请求头，优先获取机场提供的 Mihomo 原生配置。
+- 整组测速完成后显示首个失败节点的具体原因，便于排查超时和配置问题。
+
+> **已安装用户：** 根据安装方式选择 [Git 克隆更新](#git-克隆安装更新) 或 [ZIP 下载更新](#zip-下载安装更新)。更新后，在订阅页按 `y` 重新同步，再按 `d` 测速。
+
+## 项目简介
+
 **VPNCTL 是面向 Linux 服务器和 SSH 会话的 Mihomo 终端管理器。** 不依赖桌面环境，在中文 TUI 中管理订阅、选择节点、测速、配置端口，并让当前账户的终端应用使用代理。
 
 VPNCTL 当前版本：**0.1**，项目版本字段为 `0.1.0`。它不是全系统透明代理，不自动接管其他用户或其他进程的网络。
+
+## 导航
+
+- [界面预览](#界面预览) · [功能](#功能) · [运行要求](#运行要求)
+- [安装](#安装) · [更新已安装版本](#更新已安装版本) · [离线安装 Mihomo](#离线安装-mihomo)
+- [开始使用](#开始使用) · [订阅管理](#订阅管理) · [端口与联网](#端口与联网)
+- [终端与 Codex 代理](#终端与-codex-代理) · [测试](#测试) · [卸载](#卸载) · [运行数据](#运行数据)
 
 ## 界面预览
 
@@ -58,11 +77,32 @@ VPNCTL 当前版本：**0.1**，项目版本字段为 `0.1.0`。它不是全系�
 
 ## 安装
 
-先获取源码，再运行管理菜单：
+先选择一种方式获取源码，再执行安装。
+
+### 方式一：Git 克隆
 
 ```bash
 git clone https://github.com/Eaick/Vpnctl.git
-cd Vpnctl
+cd "Vpnctl"
+bash scripts/vpnctl.sh install
+```
+
+### 方式二：下载 ZIP
+
+从 GitHub 的 **Code → Download ZIP** 或 [源码 ZIP 下载链接](https://github.com/Eaick/Vpnctl/archive/refs/heads/main.zip) 下载，解压后进入项目目录。服务器不能访问 GitHub 时，可先在能联网的电脑上下载，再上传至服务器。
+
+```bash
+cd "/path/to/Vpnctl-main"
+bash scripts/vpnctl.sh install
+```
+
+将示例路径替换为实际解压目录。ZIP 安装不需要 Git。
+
+### 管理菜单与手动安装
+
+上述安装命令都会依次执行 `npm install`、`npm run build`、`npm link`，完成后输入 `vpnctl` 即可使用。也可在源码目录运行管理菜单：
+
+```bash
 bash scripts/vpnctl.sh
 ```
 
@@ -73,7 +113,7 @@ bash scripts/vpnctl.sh
 0. 退出
 ```
 
-选择 `1`，脚本依次执行 `npm install`、`npm run build`、`npm link`，完成后输入 `vpnctl` 即可使用。也可直接运行 `bash scripts/vpnctl.sh install`，或手动安装：
+选择 `1` 安装、`2` 卸载、`3` 测试。手动安装命令如下：
 
 ```bash
 npm install
@@ -84,19 +124,43 @@ vpnctl
 
 ## 更新已安装版本
 
-先退出旧 TUI，在原来安装 VPNCTL 的源码目录执行：
+先退出旧 TUI。更新程序会保留当前账户的订阅、端口、受管 Mihomo 和个人运行数据；无需卸载，也不要重新执行 `vpnctl init`。
+
+| 原安装方式 | 识别方式 | 更新方法 |
+| --- | --- | --- |
+| Git 克隆 | 使用过 `git clone`，源码目录带 `.git` | 拉取新版，再运行安装脚本 |
+| ZIP 下载 | 解压源码压缩包，通常没有 `.git` | 下载新版 ZIP，解压到新目录，再运行安装脚本 |
+
+### Git 克隆安装更新
+
+进入**原安装源码目录**，执行这一条命令：
 
 ```bash
 git pull --ff-only && bash scripts/vpnctl.sh install
 ```
 
-这条命令会拉取新版，再执行 `npm install`、`npm run build`、`npm link`。更新完成后输入 `vpnctl` 即可使用；现有订阅、端口、受管 Mihomo 和个人运行数据会保留。更新不需要卸载，也不要重新执行 `vpnctl init`。
+如果 Git 提示本地修改或无法快进，请先处理自己的修改，不要强制覆盖。服务器不能访问 GitHub 时，也可以使用下面的 ZIP 更新方式。
 
-本次修复了部分机场按客户端类型返回不同配置的问题。更新后请在订阅页激活要使用的订阅，按 `y` 重新同步，再进入节点页按 `d` 测速；仅更新程序不会替换之前保存的订阅缓存。
+### ZIP 下载安装更新
 
-若服务器无法访问 GitHub，可在能联网的电脑上下载新版源码，上传并覆盖原源码目录中的项目文件，然后执行 `bash scripts/vpnctl.sh install`。如果上传的是已经构建好的完整 `dist/`，替换原目录的 `dist/` 后即可重新打开 TUI；新增或变更依赖时仍需安装依赖。
+1. 重新下载 [最新源码 ZIP](https://github.com/Eaick/Vpnctl/archive/refs/heads/main.zip)。服务器不能访问 GitHub 时，在能联网的电脑下载后上传。
+2. 将压缩包解压到一个**新的目录**，保留旧源码目录作为备份。
+3. 进入新源码目录，执行安装命令：
 
-如果更新时 npm 报错连接已关闭的本地代理端口，先在当前终端执行 `vpnoff`；npm 自己保存的代理还需检查 `npm config get proxy` 和 `npm config get https-proxy`。Mihomo 仍在运行且下载需要代理时，可执行 `vpnon` 获取当前有效端口。若 Git 提示本地修改或无法快进，请保留并处理本地修改，不要用强制覆盖命令更新。
+```bash
+cd "/path/to/new/Vpnctl-main"
+bash scripts/vpnctl.sh install
+```
+
+`npm link` 会让全局 `vpnctl` 指向新源码目录。个人运行数据默认位于 `~/.local/share/vpnctl/`，仍可继续使用。请保留新源码目录，因为全局命令依赖其中的构建文件；ZIP 安装无需执行 `git pull`。
+
+如果已有别人提供的完整新版 `dist/`，也可替换原源码目录的 `dist/`；新增或变更依赖时仍需安装依赖。GitHub 源码 ZIP 本身不包含 `dist/`，需要执行上述安装命令来构建。
+
+### 更新后操作
+
+运行 `vpnctl`，在订阅页激活要使用的订阅，按 `y` 重新同步，再进入节点页按 `d` 测速。此次兼容性修复需要重新同步才能替换旧订阅缓存。
+
+若 npm 报错连接已关闭的本地代理端口，在当前终端执行 `vpnoff`。npm 自己保存的代理还需检查 `npm config get proxy` 和 `npm config get https-proxy`；Mihomo 正在运行且下载需要代理时，可执行 `vpnon` 获取当前有效端口。
 
 ## 离线安装 Mihomo
 
@@ -267,7 +331,6 @@ unalias vpnon vpnoff vpnstat codexvpn 2>/dev/null || true
 个人运行目录默认为 `~/.local/share/vpnctl/`，包含内核、安装状态、订阅、缓存、生成配置和日志。卸载时默认保留个人订阅数据。
 
 仓库仅提供 [公开配置示例](./config.example.yaml)。
-
 
 ## 许可证
 

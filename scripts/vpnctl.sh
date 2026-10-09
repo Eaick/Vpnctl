@@ -88,7 +88,7 @@ test_vpnctl() {
       ;;
     ui)
       label='TUI 卡片、布局与总览'
-      files=(dashboard tui-cards tui-layout tui-latency ui-guidance overview-monitor latency-targets theme help)
+      files=(dashboard tui-cards tui-layout tui-latency tui-node-view ui-guidance overview-monitor latency-targets theme help)
       ;;
     shell) label='Shell 集成与管理脚本'; files=(shell script-menu) ;;
     entry) label='构建入口检查' ;;

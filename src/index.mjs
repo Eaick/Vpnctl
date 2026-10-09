@@ -3,6 +3,7 @@ import { fail } from './lib/render.mjs';
 import { getBrandHelpBlock } from './lib/brand.mjs';
 import { formatCliHelpText } from './lib/help.mjs';
 import { createConfig } from './lib/config.mjs';
+import { VPNCTL_VERSION } from './lib/version.mjs';
 
 async function printHelp() {
   const config = createConfig();
@@ -30,6 +31,10 @@ function parseFlags(args) {
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0] || 'tui';
+  if (command === '--version' || command === '-v' || command === 'version') {
+    console.log(`VPNCTL ${VPNCTL_VERSION}`);
+    return;
+  }
   const rest = args.slice(1);
   const flags = parseFlags(rest);
   if (flags.theme) process.env.VPNCTL_THEME = flags.theme;

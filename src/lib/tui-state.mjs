@@ -1,4 +1,5 @@
 import { filterItems, filterNodesByProtocol, resolveSelectedIndex } from './tui-layout.mjs';
+import { getSelectableNodes } from './tui-node-view.mjs';
 
 export function createInitialTuiState(snapshot) {
   return {
@@ -14,6 +15,7 @@ export function createInitialTuiState(snapshot) {
       nodes: ''
     },
     protocolFilter: 'all',
+    nodeNoticesExpanded: false,
     notice: {
       tone: 'accent',
       text: '就绪'
@@ -35,14 +37,14 @@ export function getSelectedProvider(state) {
 export function getNodes(state, provider = getSelectedProvider(state)) {
   if (!provider) return [];
   return filterItems(
-    filterNodesByProtocol(provider.nodes, state.protocolFilter),
+    filterNodesByProtocol(getSelectableNodes(provider), state.protocolFilter),
     state.filters.nodes
   );
 }
 
 export function getAvailableProtocols(provider) {
   const protocols = new Set();
-  for (const node of provider?.nodes || []) {
+  for (const node of getSelectableNodes(provider)) {
     if (node?.protocol) protocols.add(node.protocol);
   }
   return ['all', ...Array.from(protocols).sort()];
@@ -59,7 +61,8 @@ export function ensureSelections(state) {
   state.selectedProviderId = providers[providerIndex].id;
 
   for (const provider of state.snapshot.providers) {
-    const current = provider.nodes.find((node) => node.isCurrent) || provider.nodes[0] || null;
+    const selectable = getSelectableNodes(provider);
+    const current = selectable.find((node) => node.isCurrent) || selectable[0] || null;
     if (!current) continue;
 
     if (!state.selectedNodeIds[provider.id]) {

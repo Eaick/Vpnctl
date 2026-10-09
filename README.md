@@ -1,6 +1,6 @@
 # VPNCTL
 
-[![Version](https://img.shields.io/badge/version-0.1.0-0f766e)](https://github.com/Eaick/Vpnctl)
+[![Version](https://img.shields.io/badge/VPNCTL-0.1.1-0f766e)](https://github.com/Eaick/Vpnctl)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![mihomo](https://img.shields.io/badge/runtime-mihomo-0f766e)](https://github.com/MetaCubeX/mihomo)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -17,6 +17,16 @@
 
 ## 最新动态
 
+**2026-10-09 · VPNCTL 0.1.1**
+
+- 节点页按终端宽度显示 1～4 列卡片，低高度时自动使用紧凑列表。
+- 将可识别的流量、到期、重置和公告提示放入只读提示区，按 `v` 展开或收起，不参与节点选择和测速。
+- 保留独立光标和当前使用标记，修正三角标记的终端宽度问题，支持方向键按卡片移动。
+- 新增 `vpnctl --version`，TUI 顶部同步显示 VPNCTL 程序版本。
+- 保留原有订阅下载、节点名称、Mihomo 配置和 provider 测速回退逻辑，并补充终端渲染及切换、测速回归测试。
+
+> 流量提示来自最近同步的订阅节点文字，不是实时余额。本版尚未解析 `subscription-userinfo` 响应头；若机场只通过响应头提供流量信息，则不会显示额度。
+
 **2026-10-07 · VPNCTL 0.1 维护更新**
 
 - 修复部分机场根据客户端类型返回不同节点配置，导致 VPNCTL 测速显示 `ERR` 的兼容问题。
@@ -29,7 +39,7 @@
 
 **VPNCTL 是面向 Linux 服务器和 SSH 会话的 Mihomo 终端管理器。** 不依赖桌面环境，在中文 TUI 中管理订阅、选择节点、测速、配置端口，并让当前账户的终端应用使用代理。
 
-VPNCTL 当前版本：**0.1**，项目版本字段为 `0.1.0`。它不是全系统透明代理，不自动接管其他用户或其他进程的网络。
+VPNCTL 当前版本：**0.1.1**，可执行 `vpnctl --version` 查看；这不是 npm 工具或 Mihomo 内核的版本。它不是全系统透明代理，不自动接管其他用户或其他进程的网络。
 
 ## 导航
 
@@ -158,7 +168,7 @@ bash scripts/vpnctl.sh install
 
 ### 更新后操作
 
-运行 `vpnctl`，在订阅页激活要使用的订阅，按 `y` 重新同步，再进入节点页按 `d` 测速。此次兼容性修复需要重新同步才能替换旧订阅缓存。
+运行 `vpnctl --version` 确认显示 `VPNCTL 0.1.1`，再启动 `vpnctl`。节点页布局更新无需重新初始化；从订阅兼容性修复前的旧版本升级时，在订阅页激活要使用的订阅，按 `y` 重新同步，再进入节点页按 `d` 测速，以替换旧订阅缓存。
 
 若 npm 报错连接已关闭的本地代理端口，在当前终端执行 `vpnoff`。npm 自己保存的代理还需检查 `npm config get proxy` 和 `npm config get https-proxy`；Mihomo 正在运行且下载需要代理时，可执行 `vpnon` 获取当前有效端口。
 
@@ -218,6 +228,20 @@ vpnctl
 5. 在节点页切换节点并测速
 
 节点页以卡片显示节点名、协议和测速结果；总览卡片显示当前链路、端口、内网/代理出口 IP、连接数及 VPNCTL/Mihomo 内存。进入总览或按 `r` 刷新时才进行一次网络采样，不持续轮询。出口 IP 查询会通过当前 VPNCTL 代理请求 [ipify](https://www.ipify.org/)；需要 `curl`，缺失或请求失败时只影响网络卡片。
+
+### 节点页操作
+
+| 按键 / 标记 | 作用 |
+| --- | --- |
+| `↑` / `↓` | 在节点卡片之间按行移动，紧凑列表中逐项移动 |
+| `←` / `→` | 切换相邻卡片；首张卡片按 `←` 返回提供方 |
+| `Enter` | 将光标所在节点设为实际使用节点 |
+| `/` / `f` | 文本搜索 / 协议筛选，两者共同生效 |
+| `d` | 对当前筛选后的节点执行测速，不包含只读提示 |
+| `v` | 展开或收起订阅提示；终端过低时优先显示节点 |
+| `►` / `● 使用中` | 光标位置 / 当前实际节点，移动光标不会自动切换代理 |
+
+提示区读取已有订阅中的明确提示文字，不修改原始节点名或内核配置。没有这些文字时不推算余额，也不会将 Mihomo 本次运行流量当作机场剩余额度。
 
 ## 订阅管理
 

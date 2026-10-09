@@ -5,6 +5,11 @@
     example: 'vpnctl'
   },
   {
+    command: 'vpnctl --version',
+    meaning: '显示 VPNCTL 程序版本，不是 npm 或 Mihomo 的版本。',
+    example: 'vpnctl --version'
+  },
+  {
     command: 'vpnctl dev init',
     meaning: '\u5728\u9879\u76ee .sandbox \u4e2d\u521d\u59cb\u5316\u5f00\u53d1\u73af\u5883\uff0c\u9ed8\u8ba4\u4f7f\u7528 mix \u6a21\u5f0f\uff1b\u53ef\u901a\u8fc7 --proxy-mode \u5207\u5230 separate\u3002',
     example: 'node ./dist/index.js dev init --skip-download --proxy-mode mix --mixed-port 17890 --api-port 19090'
@@ -85,6 +90,8 @@ const TUI_HELP_SECTIONS = [
       's: \u542f\u52a8 mihomo',
       'k: \u505c\u6b62 mihomo',
       'f: \u5728\u8282\u70b9\u9875\u5faa\u73af\u5207\u6362\u534f\u8bae\u7b5b\u9009',
+      '节点页：↑↓ 按行移动，←→ 切换卡片；首张卡片按 ← 返回提供方',
+      'v: 展开或收起节点页的只读订阅提示，不参与选择和测速',
       'd: \u5bf9\u5f53\u524d provider \u7684\u53ef\u89c1\u8282\u70b9\u6267\u884c\u6574\u7ec4\u6d4b\u901f',
       'p: \u4fee\u6539\u7aef\u53e3\u6a21\u5f0f\u4e0e\u7aef\u53e3\uff0c\u652f\u6301 mix / separate',
       'b: \u5b89\u88c5 bashrc \u7247\u6bb5',
@@ -98,7 +105,7 @@ const TUI_HELP_SECTIONS = [
   {
     title: '\u56fe\u4f8b',
     lines: [
-      '节点卡片：双线边框 + ▶ 表示光标所在卡片，Enter 才切换实际节点',
+      '节点卡片：双线边框 + ► 表示光标所在卡片，Enter 才切换实际节点',
       '节点卡片：● 使用中表示当前实际节点；非光标卡片使用粗线边框',
       '>: \u5f53\u524d\u5149\u6807',
       '*: \u5f53\u524d provider \u6216\u5f53\u524d\u8282\u70b9',

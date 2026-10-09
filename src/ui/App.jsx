@@ -17,7 +17,9 @@ import { createAddSubscriptionModal, createEditSubscriptionModal, createPortModa
 import { formatInitProgressLine } from '../lib/init-progress.mjs';
 import { applyManagedConfigToRuntime, configureRuntimePorts } from '../lib/runtime-apply.mjs';
 import { getManagedRuntimeStatus } from '../lib/managed-runtime.mjs';
-import { buildNodeCardLines, buildOverviewCardLines } from '../lib/tui-cards.mjs';
+import { buildNodeCardLines, buildOverviewCardLines, moveNodeCardSelection } from '../lib/tui-cards.mjs';
+import { getNodeNotices, getSelectableNodes } from '../lib/tui-node-view.mjs';
+import { VPNCTL_VERSION } from '../lib/version.mjs';
 import { formatMemory, loadOverviewMetrics } from '../lib/overview-monitor.mjs';
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 const COLOR_ENABLED = process.env.NO_COLOR !== '1';
@@ -441,6 +443,10 @@ export default function App() {
   const nodeWidth = layoutMode === 'single' ? dimensions.width : Math.max(20, contentWidth - providerWidth - 1);
   const selectedProvider = state ? getSelectedProvider(state) : null;
   const nodes = state ? getNodes(state, selectedProvider) : [];
+  const nodeNotices = state ? getNodeNotices(selectedProvider, state.snapshot.subscriptions) : [];
+  const nodeCardWidth = Math.max(1, nodeWidth - 4);
+  const nodeCardHeight = Math.max(1, middle - 2);
+  const compactNodeCards = nodeCardHeight < 6 || nodeCardWidth < 12;
   const selectedNodeId = selectedProvider ? state.selectedNodeIds[selectedProvider.id] : null;
   const subscriptions = state ? subscriptionsOf(state) : [];
   const selectedLatencyTarget = state ? getLatencyTarget(state.selectedLatencyTargetId) : getLatencyTarget('gstatic');
@@ -753,7 +759,13 @@ export default function App() {
     if (key.leftArrow) {
       updateState(next => {
         if (next.activePane === 'content' && next.sectionId === 'nodes' && next.sectionPane === 'nodes') {
-          next.sectionPane = 'providers';
+          const provider = getSelectedProvider(next);
+          const items = getNodes(next, provider);
+          if (provider && items.findIndex(item => item.id === next.selectedNodeIds[provider.id]) > 0) {
+            next.selectedNodeIds[provider.id] = moveNodeCardSelection(items, next.selectedNodeIds[provider.id], 'left', nodeCardWidth, { compact: compactNodeCards });
+          } else {
+            next.sectionPane = 'providers';
+          }
         } else {
           next.activePane = 'nav';
         }
@@ -762,6 +774,11 @@ export default function App() {
     }
     if (key.rightArrow) {
       updateState(next => {
+        if (next.activePane === 'content' && next.sectionId === 'nodes' && next.sectionPane === 'nodes') {
+          const provider = getSelectedProvider(next);
+          if (provider) next.selectedNodeIds[provider.id] = moveNodeCardSelection(getNodes(next, provider), next.selectedNodeIds[provider.id], 'right', nodeCardWidth, { compact: compactNodeCards });
+          return;
+        }
         next.activePane = 'content';
         if (next.sectionId === 'nodes') next.sectionPane = 'nodes';
       });
@@ -807,9 +824,7 @@ export default function App() {
             const provider = getSelectedProvider(next);
             if (!provider) return;
             const items = getNodes(next, provider);
-            const index = items.findIndex(item => item.id === next.selectedNodeIds[provider.id]);
-            const node = items[moveSelection(index >= 0 ? index : 0, direction, items.length)];
-            if (node) next.selectedNodeIds[provider.id] = node.id;
+            next.selectedNodeIds[provider.id] = moveNodeCardSelection(items, next.selectedNodeIds[provider.id], direction < 0 ? 'up' : 'down', nodeCardWidth, { compact: compactNodeCards });
           }
         }
       });
@@ -1025,6 +1040,12 @@ export default function App() {
       });
       return;
     }
+    if (input === 'v' && state.sectionId === 'nodes') {
+      updateState(next => {
+        next.nodeNoticesExpanded = !next.nodeNoticesExpanded;
+      });
+      return;
+    }
     if (input === 'f' && state.sectionId === 'nodes') {
       const provider = getSelectedProvider(state);
       updateState(next => {
@@ -1151,7 +1172,7 @@ export default function App() {
     width: Math.max(4, providerWidth - 4),
     height: Math.max(1, middle - 2),
     renderRow: (item, isSelected) => ({
-      text: `${padText(`${isSelected ? '>' : ' '}${item.status === 'active' ? '*' : ' '} ${truncateText(item.label, Math.max(6, providerWidth - 11))}`, Math.max(4, providerWidth - 7))}${`${item.nodeCount}`.padStart(3, ' ')}`,
+      text: `${padText(`${isSelected ? '>' : ' '}${item.status === 'active' ? '*' : ' '} ${truncateText(item.label, Math.max(6, providerWidth - 11))}`, Math.max(4, providerWidth - 7))}${`${getSelectableNodes(item).length}`.padStart(3, ' ')}`,
       tone: isSelected ? 'selected' : item.status === 'active' ? 'active' : 'normal'
     }),
     emptyText: '没有可用提供方'
@@ -1164,8 +1185,11 @@ export default function App() {
       delayLabel: formatDelay(item.delayMs, item.delayStatus)
     })),
     selectedId: selectedNodeId,
-    width: Math.max(4, nodeWidth - 4),
-    height: Math.max(1, middle - 2),
+    width: nodeCardWidth,
+    height: nodeCardHeight,
+    notices: nodeNotices,
+    noticesExpanded: state.nodeNoticesExpanded,
+    currentNodeLabel: selectedProvider?.currentNodeLabel || '',
     emptyText: state.snapshot.status.apiAlive ? '没有匹配当前筛选的节点' : '请先启动 mihomo，延迟才会显示'
   });
   const overviewGuide = buildOverviewGuide(state.snapshot);
@@ -1233,7 +1257,7 @@ export default function App() {
     emptyText: ''
   });
   const currentNode = getSelectedNode(state, selectedProvider);
-  const statusLine1 = padText(`VPNCTL  主题:${previewThemeName}  模式:${state.snapshot.status.proxyMode}`, dimensions.width);
+  const statusLine1 = padText(`VPNCTL ${VPNCTL_VERSION}  主题:${previewThemeName}  模式:${state.snapshot.status.proxyMode}`, dimensions.width);
   const statusLine2 = padText(`页面:${section.label} | 接口:${state.snapshot.status.apiAlive ? '在线' : '离线'} | 进程:${state.snapshot.status.pid || '无'} | 订阅:${activeSubscription?.displayName || '无'}`, dimensions.width);
   const statusLine3 = padText(`提供方:${selectedProvider?.label || '无'} | 光标:${currentNode?.label || '无'} | 已连接:${state.snapshot.status.apiAlive ? selectedProvider?.currentNodeLabel || state.snapshot.currentNodeLabel || '无' : '离线'}`, dimensions.width);
   const statusLine4 = padText(`测速目标:${selectedLatencyTarget.label} | 协议:${protocolFilterLabel} | ${getPortSummary(state.snapshot.status)} | 来源:${state.snapshot.status.portSource}`, dimensions.width);
@@ -1324,7 +1348,7 @@ export default function App() {
       children: padText('i 初始化  a 添加订阅  e 修改订阅  y 同步  s 启动  d 测速  p 端口模式  b bashrc  x 删除订阅', dimensions.width)
     }), /*#__PURE__*/_jsx(Text, {
       ...toneProps(previewThemeName, 'normal'),
-      children: padText(state.searchMode ? `搜索中 | 当前区域 ${state.activePane === 'nav' ? '导航' : section.label}` : `当前焦点 ${state.activePane === 'nav' ? '导航' : '内容'} | 当前页面 ${section.label}`, dimensions.width)
+      children: padText(state.searchMode ? `搜索中 | 当前区域 ${state.activePane === 'nav' ? '导航' : section.label}` : section.id === 'nodes' ? '↑↓ 切换卡片行  ←→ 切换卡片  Enter 使用节点  v 展开提示  Esc 返回导航' : `当前焦点 ${state.activePane === 'nav' ? '导航' : '内容'} | 当前页面 ${section.label}`, dimensions.width)
     })]
   });
 }

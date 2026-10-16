@@ -18,6 +18,9 @@ test('management script exposes main and classified test menus', async () => {
   assert.match(source, /\[通过\]/);
   assert.match(source, /\[失败\]/);
   assert.match(source, /\.sandbox.*\n\s*confirm/);
+  assert.match(source, /8\. CLI 管理与应用集成/);
+  assert.match(source, /claude_dir\/\.vpnctl-proxy\.json/);
+  assert.match(source, /run_vpnctl shell uninstall --bashrc-path/);
 });
 
 test('classified script suites reference existing tests and cover all test files', async () => {

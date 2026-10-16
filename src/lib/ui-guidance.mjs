@@ -218,7 +218,7 @@ export function createShellInstallModal(snapshot) {
     ],
     notes: [
       '\u53ea\u8986\u76d6 vpnctl \u81ea\u5df1\u7684\u53d7\u7ba1\u5757\uff0c\u4e0d\u6539\u5176\u5b83 bash \u914d\u7f6e\u3002',
-      '\u5b89\u88c5\u540e\u4f1a\u63d0\u4f9b vpnctl-proxy-on/off/status \u4e0e codex \u4ee3\u7406\u5c01\u88c5\u3002'
+      '安装后提供 vpnctl-proxy-on/off/status 与 Codex / Claude HTTP 代理包装；不自动重启后台服务。'
     ],
     activeField: 0,
     submitText: 'Enter \u5b89\u88c5 | Tab \u5207\u6362\u5b57\u6bb5 | Esc \u53d6\u6d88'
@@ -314,13 +314,13 @@ export function buildShellGuide(snapshot) {
     return [
       '\u8fd8\u6ca1\u6709\u5b89\u88c5 bashrc \u7247\u6bb5\u3002',
       '\u5b89\u88c5\u540e\u4f1a\u63d0\u4f9b vpnctl-proxy-on/off/status\uff0c',
-      '\u540c\u65f6\u63d0\u4f9b codex() \u4e0e codexvpn \u6765\u590d\u7528\u5f53\u524d VPN\u3002'
+      '同时提供 codex / codexvpn 和 claude / claudevpn，动态复用当前 HTTP 代理。'
     ];
   }
 
-  if (!shell.codexWrapper) {
+  if (!shell.codexWrapper || !shell.claudeWrapper) {
     return [
-      'bashrc \u5df2\u5b89\u88c5\uff0c\u4f46 Codex \u4ee3\u7406\u5c01\u88c5\u4e0d\u5b8c\u6574\u3002',
+      'bashrc 已安装，但 Codex / Claude 代理包装需要更新。',
       '\u53ef\u91cd\u65b0\u6267\u884c shell \u5b89\u88c5\u4ee5\u8865\u5168\u7247\u6bb5\uff0c',
       '\u5b8c\u6210\u540e\u518d source ~/.bashrc\u3002'
     ];

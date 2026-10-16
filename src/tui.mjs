@@ -23,9 +23,7 @@ export async function runTui() {
   const { render } = await import('ink');
   const { default: App } = await import('./ui/App.jsx');
 
-  const app = render(React.createElement(App, {}), {
-    exitOnCtrlC: true
-  });
-
+  const app = render(React.createElement(App), { exitOnCtrlC: false });
   await app.waitUntilExit();
+  app.cleanup();
 }

@@ -12,3 +12,10 @@ runtime/
 data/
 cache/
 logs/
+.claude/
+.codex/
+.vpnctl-providers.json
+.vpnctl-proxy.json
+.vpnctl-api-settings.*.bak
+.bashrc
+.bashrc.vpnctl-*

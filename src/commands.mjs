@@ -349,8 +349,8 @@ export async function cmdDelay({ group, proxy, url, timeout } = {}) {
   printJson(result);
 }
 
-export async function cmdEnv({ shell = 'bash', quiet = false } = {}) {
-  process.stdout.write(await buildShellExports({ shell, quiet }));
+export async function cmdEnv({ shell = 'bash', quiet = false, app } = {}) {
+  process.stdout.write(await buildShellExports({ shell, quiet, app }));
 }
 
 export async function cmdDoctor() {
@@ -564,7 +564,7 @@ export async function cmdShellInstall({ bashrcPath } = {}) {
     bashrcPath
   });
   ok(`bashrc updated: ${result.bashrcPath}`);
-  info('same-account sessions can now run codex directly and reuse a running VPN');
+  info('在新 Bash 会话中运行 codex、claude 或对应 vpn 别名，将动态使用本账户 VPNCTL 代理；不会自动重启后台服务。');
 }
 
 export async function cmdShellUninstall({ bashrcPath } = {}) {
@@ -573,6 +573,7 @@ export async function cmdShellUninstall({ bashrcPath } = {}) {
     bashrcPath
   });
   ok(`bashrc cleaned: ${result.bashrcPath}`);
+  info('仅恢复仍由 VPNCTL 管理的 Claude 代理字段；已有后台进程不会被停止，请自行确认其代理环境。');
 }
 
 export async function cmdShellPrint({ shell = 'bash' } = {}) {

@@ -13,17 +13,21 @@ test('formatCliHelpText explains proxy mode, port, and shell commands', () => {
   assert.match(text, /proxy-mode/);
   assert.match(text, /mix/);
   assert.match(text, /vpnctl shell install/);
+  assert.match(text, /vpnctl integrate codex doctor/);
+  assert.match(text, /vpnctl integrate claude doctor/);
+  assert.match(text, /--dry-run/);
 });
 
 test('getTuiHelpSections includes navigation, actions, and legend descriptions', () => {
   const sections = getTuiHelpSections();
-  assert.equal(sections.length, 3);
-  assert.match(sections[0].lines.join('\n'), /\?/);
-  assert.match(sections[1].lines.join('\n'), /i:/);
-  assert.match(sections[1].lines.join('\n'), /f:/);
-  assert.match(sections[1].lines.join('\n'), /mix/);
-  assert.match(sections[1].lines.join('\n'), /Google/);
-  assert.match(sections[2].lines.join('\n'), /port source/);
+  assert.equal(sections.length, 4);
+  assert.match(sections.find(s => s.title === '导航').lines.join('\n'), /\?/);
+  const actions = sections.find(s => s.title === '动作').lines.join('\n');
+  for (const pattern of [/i:/, /f:/, /mix/, /Google/]) assert.match(actions, pattern);
+  assert.match(sections.find(s => s.title === '图例').lines.join('\n'), /port source/);
+  const cli = sections.find(s => s.title === 'CLI 管理').lines.join('\n');
+  assert.match(cli, /Codex \/ Claude Code/);
+  assert.match(cli, /默认取消/);
 });
 
 test('VPNCTL application version matches metadata and is available without initializing a runtime', () => {

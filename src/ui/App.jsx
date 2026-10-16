@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdout } from 'ink';
 import { createConfig } from '../lib/config.mjs';
 import { loadDashboardSnapshot, refreshDashboardSnapshot, switchProviderNode, measureNode } from '../lib/dashboard.mjs';
@@ -20,6 +20,12 @@ import { getManagedRuntimeStatus } from '../lib/managed-runtime.mjs';
 import { buildNodeCardLines, buildOverviewCardLines, moveNodeCardSelection } from '../lib/tui-cards.mjs';
 import { getNodeNotices, getSelectableNodes } from '../lib/tui-node-view.mjs';
 import { VPNCTL_VERSION } from '../lib/version.mjs';
+import { inspectIntegration, prepareIntegrationAction, executeIntegrationAction, installApplicationIntegration, redactText } from '../lib/integrations/index.mjs';
+import { buildCliManagementLines, buildIntegrationModalLines, getCliActions } from '../lib/cli-management.mjs';
+import { buildClaudeProviderLines, createClaudeProviderEditor, readClaudeProviderInput } from '../lib/claude-management.mjs';
+import { listClaudeProviders, prepareClaudeProviderAction, executeClaudeProviderAction } from '../lib/integrations/claude-providers.mjs';
+import { resolveApplicationProxy } from '../lib/integrations/runtime.mjs';
+import { formatActionPreview } from '../integrate.mjs';
 import { formatMemory, loadOverviewMetrics } from '../lib/overview-monitor.mjs';
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 const COLOR_ENABLED = process.env.NO_COLOR !== '1';
@@ -48,6 +54,9 @@ const SECTIONS = [{
 }, {
   id: 'install',
   label: '安装与升级'
+}, {
+  id: 'cli',
+  label: 'CLI 管理'
 }, {
   id: 'shell',
   label: 'Shell 集成'
@@ -310,6 +319,9 @@ function bootState(snapshot) {
     selectedThemeId: snapshot.status.theme || 'gemini',
     selectedLatencyTargetId: 'gstatic',
     overviewScroll: 0,
+    cliApp: 'codex',
+    cliAction: 0,
+    cliScroll: 0,
     filters: {
       nav: '',
       providers: '',
@@ -377,7 +389,7 @@ function openGuidedModal(action, snapshot) {
   if (action === 'shell-install') return createShellInstallModal(snapshot);
   return null;
 }
-export default function App() {
+export default function App({ initialSection = 'overview', initialCliApp = 'codex', resumeNotice = '' } = {}) {
   const {
     exit
   } = useApp();
@@ -388,6 +400,10 @@ export default function App() {
   const [state, setState] = useState(null);
   const [bootError, setBootError] = useState('');
   const [overviewMetrics, setOverviewMetrics] = useState(null);
+  const [cliReports, setCliReports] = useState({});
+  const [cliLoading, setCliLoading] = useState(false);
+  const cliRequest = useRef(0);
+  const busyLatch = useRef(false);
   const dimensions = useMemo(() => ({
     width: stdout.columns || 120,
     height: stdout.rows || 30
@@ -399,6 +415,9 @@ export default function App() {
         const snapshot = await loadDashboardSnapshot();
         if (!mounted) return;
         const next = bootState(snapshot);
+        next.sectionId = initialSection;
+        next.cliApp = initialCliApp;
+        if (resumeNotice) setNotice(next, 'accent', resumeNotice);
         ensureAppSelections(next);
         setState(next);
       } catch (error) {
@@ -423,6 +442,20 @@ export default function App() {
       mounted = false;
     };
   }, [state?.sectionId, state?.snapshot?.generatedAt]);
+  useEffect(() => {
+    if (!state || state.sectionId !== 'cli') return undefined;
+    const request = ++cliRequest.current;
+    const app = state.cliApp;
+    setCliLoading(true);
+    void inspectIntegration(app).then(report => {
+      if (request === cliRequest.current) setCliReports(previous => ({ ...previous, [app]: report }));
+    }).catch(error => {
+      if (request === cliRequest.current) setCliReports(previous => ({ ...previous, [app]: { app, checks: [{ status: 'error', label: '诊断失败', detail: redactText(error.message) }] } }));
+    }).finally(() => {
+      if (request === cliRequest.current) setCliLoading(false);
+    });
+    return () => { cliRequest.current += 1; };
+  }, [state?.sectionId, state?.cliApp, state?.snapshot?.generatedAt]);
   const updateState = mutator => {
     setState(previous => {
       const next = cloneState(previous);
@@ -458,7 +491,8 @@ export default function App() {
     });
   };
   const withBusy = async (action, successNotice) => {
-    if (!state || state.busy) return;
+    if (!state || state.busy || busyLatch.current) return;
+    busyLatch.current = true;
     updateState(next => {
       next.busy = true;
     });
@@ -473,7 +507,87 @@ export default function App() {
         next.busy = false;
         setNotice(next, 'error', error.message || String(error));
       });
+    } finally {
+      busyLatch.current = false;
     }
+  };
+  const refreshCli = async (app, network = false, account = false) => {
+    const request = ++cliRequest.current;
+    setCliLoading(true);
+    try {
+      const report = await inspectIntegration(app, { network, account });
+      if (request === cliRequest.current) setCliReports(previous => ({ ...previous, [app]: report }));
+      return report;
+    } finally {
+      if (request === cliRequest.current) setCliLoading(false);
+    }
+  };
+  const performCliAction = async () => {
+    const app = state.cliApp;
+    const action = getCliActions(app)[state.cliAction]?.id;
+    if (app === 'claude' && action === 'providers') {
+      await withBusy(() => openClaudeProviders(), null);
+      return;
+    }
+    if (action === 'doctor' || action === 'network' || action === 'account') {
+      await withBusy(async () => { await refreshCli(app, action === 'network' || action === 'account', action === 'account'); }, '诊断已更新，未提供的数据不代表为零或正常');
+      return;
+    }
+    await withBusy(async () => {
+      const prepared = action === 'install'
+        ? { app, action, plan: { allowed: true, steps: [{ label: '备份并更新本账户 bashrc 的 VPNCTL 受管包装' }], warnings: ['不安装应用本体，不修改账号、模型或第三方网关；新终端生效。'] } }
+        : await prepareIntegrationAction(app, action);
+      updateState(next => {
+        next.modal = { type: 'cli-confirm', prepared, lines: formatActionPreview(prepared, { confirmation: true }).split('\n'), confirmSelected: false, scroll: 0 };
+      });
+    }, null);
+  };
+  const openClaudeProviders = async (selectedId) => {
+    const listing = await listClaudeProviders();
+    const selected = Math.max(0, listing.profiles.findIndex(profile => profile.id === (selectedId || listing.activeId)));
+    updateState(next => { next.modal = { type: 'claude-providers', listing, selected }; });
+  };
+  const previewClaudeProvider = async (action, options = {}) => {
+    const context = action === 'apply' ? await resolveApplicationProxy() : undefined;
+    const plan = await prepareClaudeProviderAction(action, { ...options, context });
+    const prepared = { app: 'claude', action: 'provider', plan };
+    updateState(next => {
+      next.modal = { type: 'cli-confirm', prepared, providerInput: options.input, providerFlow: true,
+        lines: formatActionPreview(prepared, { confirmation: true }).split('\n'), confirmSelected: false, scroll: 0 };
+    });
+  };
+  const executeCliConfirmation = async (modal) => {
+    if (!modal.confirmSelected || !modal.prepared.plan.allowed) {
+      if (modal.providerFlow) await openClaudeProviders(modal.prepared.plan.id);
+      else updateState(next => { next.modal = null; });
+      return;
+    }
+    await withBusy(async () => {
+      updateState(next => { next.modal = { type: 'cli-progress', providerFlow: modal.providerFlow, selectedId: modal.prepared.plan.id, lines: ['正在准备操作...'], done: false, scroll: 0 }; });
+      try {
+        const progress = step => updateState(next => {
+          if (next.modal?.type === 'cli-progress') next.modal.lines.push(redactText(typeof step === 'string' ? step : step.label || step.id || '执行中'));
+        });
+        const result = modal.prepared.action === 'install'
+          ? await installApplicationIntegration(modal.prepared.app)
+          : modal.prepared.action === 'uninstall-shell'
+            ? await uninstallShellIntegration({})
+            : modal.prepared.action === 'provider'
+              ? await executeClaudeProviderAction(modal.prepared.plan, { input: modal.providerInput, confirmed: true,
+                ...(modal.prepared.plan.action === 'apply' ? { context: await resolveApplicationProxy() } : {}) })
+              : await executeIntegrationAction(modal.prepared, { confirmed: true, acknowledgeActive: true, acknowledgeConflicts: true, onProgress: progress });
+        progress(result.message || (modal.prepared.action === 'install' ? '终端包装已更新，请在新终端使用。' : '操作结束，请检查诊断中的未验证项目。'));
+        updateState(next => setNotice(next, result.warning ? 'warn' : 'success', redactText(result.message || '操作结束，请检查未验证项目')));
+        await refreshState();
+        if (modal.prepared.app) await refreshCli(modal.prepared.app);
+        updateState(next => { if (next.modal?.type === 'cli-progress') next.modal.done = true; });
+      } catch (error) {
+        updateState(next => {
+          if (next.modal?.type === 'cli-progress') { next.modal.error = redactText(error.message || String(error)); next.modal.done = true; }
+          setNotice(next, 'error', redactText(error.message || String(error)));
+        });
+      }
+    }, null);
   };
   const startRuntime = async () => {
     const currentConfig = createConfig();
@@ -629,10 +743,47 @@ export default function App() {
       return;
     }
     if (key.ctrl && input === 'c') {
+      if (state.busy && state.modal?.type === 'cli-progress') return;
       exit();
       return;
     }
     if (state.modal) {
+      if (state.modal.type === 'claude-providers') {
+        const modal = state.modal;
+        const profile = modal.listing.profiles[modal.selected];
+        if (key.escape) updateState(next => { next.modal = null; });
+        else if (key.upArrow || key.downArrow) updateState(next => {
+          next.modal.selected = moveSelection(modal.selected, key.upArrow ? -1 : 1, modal.listing.profiles.length);
+        });
+        else if (input === 'a' || input === 'e' && profile) updateState(next => {
+          next.modal = createClaudeProviderEditor(input === 'e' ? profile : {});
+        });
+        else if (input === 'b' || profile && (key.return || input === 'x')) await withBusy(async () => {
+          await previewClaudeProvider(input === 'b' ? 'restore' : input === 'x' ? 'delete' : 'apply', { id: profile?.id });
+        }, null);
+        return;
+      }
+      if (state.modal.type === 'claude-editor') {
+        if (key.escape) { await withBusy(() => openClaudeProviders(state.modal.id), null); return; }
+        if (key.return) {
+          await withBusy(() => previewClaudeProvider('save', { input: readClaudeProviderInput(state.modal) }), null);
+          return;
+        }
+      }
+      if (state.modal.type === 'cli-confirm' || state.modal.type === 'cli-progress') {
+        const modal = state.modal;
+        if (key.escape && (modal.type === 'cli-confirm' || modal.done || modal.error)) {
+          if (modal.providerFlow) await withBusy(() => openClaudeProviders(modal.prepared?.plan?.id || modal.selectedId), null);
+          else updateState(next => { next.modal = null; });
+        } else if (key.pageUp || key.pageDown || key.upArrow || key.downArrow) {
+          updateState(next => { next.modal.scroll = Math.max(0, (next.modal.scroll || 0) + (key.pageUp || key.upArrow ? -1 : 1)); });
+        } else if (modal.type === 'cli-confirm' && (key.tab || key.leftArrow || key.rightArrow)) {
+          updateState(next => { next.modal.confirmSelected = !next.modal.confirmSelected; });
+        } else if (modal.type === 'cli-confirm' && key.return && !state.busy) {
+          await executeCliConfirmation(modal);
+        }
+        return;
+      }
       if (state.modal.type === 'init-progress') {
         if (key.escape && (state.modal.done || state.modal.error)) {
           updateState(next => {
@@ -652,6 +803,9 @@ export default function App() {
         updateState(next => {
           const field = next.modal.fields[next.modal.activeField];
           field.value = cycleModalFieldOption(field, direction);
+          if (next.modal.type === 'claude-editor' && field.key === 'protocol' && field.value !== 'anthropic') {
+            next.modal.fields.find(item => item.key === 'authType').value = 'bearer';
+          }
           if (field.key === 'proxyMode' && (next.modal.type === 'set-ports' || next.modal.type === 'init-runtime')) {
             next.modal = rebuildPortModal(next.modal, next.snapshot, field.value);
           }
@@ -754,6 +908,23 @@ export default function App() {
       updateState(next => {
         next.activePane = next.activePane === 'nav' ? 'content' : 'nav';
       });
+      return;
+    }
+    if (state.sectionId === 'cli' && state.activePane === 'content') {
+      if (state.busy) return;
+      if (input === '1' || input === '2') {
+        updateState(next => { next.cliApp = input === '1' ? 'codex' : 'claude'; next.cliAction = 0; next.cliScroll = 0; });
+      } else if (key.upArrow || key.downArrow) {
+        updateState(next => { next.cliAction = moveSelection(next.cliAction, key.upArrow ? -1 : 1, getCliActions(next.cliApp).length); });
+      } else if (key.pageUp || key.pageDown) {
+        updateState(next => { next.cliScroll = Math.max(0, Math.min(cliPanel.maxScroll, next.cliScroll + (key.pageUp ? -3 : 3))); });
+      } else if (key.return) {
+        await performCliAction();
+      } else if (input === 'r') {
+        await withBusy(async () => { await refreshCli(state.cliApp); }, '本地诊断已刷新');
+      } else if (key.escape || key.leftArrow) {
+        updateState(next => { next.activePane = 'nav'; });
+      }
       return;
     }
     if (key.leftArrow) {
@@ -896,7 +1067,7 @@ export default function App() {
         }
         if (action === 'ready') {
           updateState(next => {
-            setNotice(next, 'success', '服务器已就绪：新会话可直接运行 codex');
+            setNotice(next, 'success', '服务器已就绪：可在 CLI 管理检查 Codex / Claude 代理');
           });
           return;
         }
@@ -906,13 +1077,13 @@ export default function App() {
         return;
       }
       if (state.sectionId === 'shell') {
-        if (!state.snapshot.status.shellIntegration?.installed || !state.snapshot.status.shellIntegration?.codexWrapper) {
+        if (!state.snapshot.status.shellIntegration?.installed || !state.snapshot.status.shellIntegration?.codexWrapper || !state.snapshot.status.shellIntegration?.claudeWrapper) {
           updateState(next => {
             next.modal = createShellInstallModal(next.snapshot);
           });
         } else {
           updateState(next => {
-            setNotice(next, 'success', 'bashrc 集成已就绪：新会话可直接运行 codex');
+            setNotice(next, 'success', 'bashrc 集成已就绪：新会话可运行 codex / claude，CLI 管理可诊断后台环境');
           });
         }
         return;
@@ -1067,10 +1238,13 @@ export default function App() {
       return;
     }
     if (input === 'n') {
-      await withBusy(async () => {
-        await uninstallShellIntegration({});
-        await refreshState();
-      }, 'bashrc 集成已卸载');
+      updateState(next => {
+        next.modal = {
+          type: 'cli-confirm', confirmSelected: false, scroll: 0,
+          prepared: { action: 'uninstall-shell', plan: { allowed: true } },
+          lines: ['将移除本账户 VPNCTL 的 bashrc 代理包装，并恢复仍由 VPNCTL 管理的 Claude 代理字段。', '保留用户其他配置、账号凭据、历史会话和手动更改的字段。', '不会停止 Codex/Claude 后台任务；已有进程的旧代理需在你同意后另行重启。']
+        };
+      });
       return;
     }
     if (input === 'd' && state.sectionId === 'nodes') {
@@ -1117,6 +1291,10 @@ export default function App() {
   }
   const section = selectedSection(state);
   const infoWidth = Math.max(4, contentWidth - 4);
+  const cliPanel = buildCliManagementLines({
+    app: state.cliApp, report: cliReports[state.cliApp], loading: cliLoading,
+    selectedAction: state.cliAction, width: infoWidth, height: Math.max(1, middle - 2), offset: state.cliScroll
+  });
   const navLines = listLines({
     title: `页面 (${SECTIONS.length})`,
     items: sectionsOf(state),
@@ -1238,10 +1416,10 @@ export default function App() {
     ports: ['端口与环境', `代理模式：${state.snapshot.status.proxyMode}`, ...getProxyEndpointSummary(state.snapshot.status), getPortSummary(state.snapshot.status), `端口来源：${state.snapshot.status.portSource}`, '', '动作：p 修改代理模式与端口'],
     latency: ['测速目标', `当前目标：${selectedLatencyTarget.label}`, `测速 URL：${selectedLatencyTarget.url}`, `${selectedLatencyTarget.description}`, '', '说明：节点延迟结果取决于这里选择的测速目标。', '动作：上下选择目标 | Enter 应用 | 前往节点页按 d 测速'],
     install: ['安装与升级', `运行模式：${state.snapshot.status.mode}`, `默认代理模式：${state.snapshot.status.proxyMode}`, `检测到旧版安装：${state.snapshot.status.oldInstallDetected ? '是' : '否'}`, `迁移状态：${state.snapshot.status.migration.migrationStatus}`, `迁移来源：${state.snapshot.status.migration.sourcePath || '无'}`, '', '动作：i 初始化 | u 迁移旧版'],
-    shell: ['Shell 集成', `已安装：${state.snapshot.status.shellIntegration?.installed ? '是' : '否'}`, `bashrc 路径：${state.snapshot.status.shellIntegration?.bashrcPath || '无'}`, `Codex 封装：${state.snapshot.status.shellIntegration?.codexWrapper ? '已启用' : '未启用'}`, `同账号复用：${formatSessionReuseState(state.snapshot.status.sessionReuse?.state)}`, `${state.snapshot.status.sessionReuse?.label || '建议在服务器安装 bash Shell 集成，以复用同账号会话的 VPN。'}`, '', ...shellGuide, '', '动作：Enter 或 b 安装 bashrc 配置块 | n 卸载 bashrc 配置块'],
+    shell: ['Shell 集成', `已安装：${state.snapshot.status.shellIntegration?.installed ? '是' : '否'}`, `bashrc 路径：${state.snapshot.status.shellIntegration?.bashrcPath || '无'}`, `Codex 封装：${state.snapshot.status.shellIntegration?.codexWrapper ? '已启用' : '未启用'}`, `Claude 封装：${state.snapshot.status.shellIntegration?.claudeWrapper ? '已启用' : '未启用'}`, `同账号复用：${formatSessionReuseState(state.snapshot.status.sessionReuse?.state)}`, `${state.snapshot.status.sessionReuse?.label || '建议在服务器安装 bash Shell 集成，以复用同账号会话的 VPN。'}`, '', 'CLI 管理：双标签诊断、确认式 Daemon 修复及 Claude 代理同步。', '已有后台进程不会自动继承新端口，也不会被自动重启。', '', ...shellGuide, '', '动作：Enter 或 b 安装 bashrc 配置块 | n 确认卸载 bashrc 配置块'],
     logs: ['日志与诊断', `日志文件：${state.snapshot.status.logFile}`, `主题：${state.snapshot.status.theme}`, `代理模式：${state.snapshot.status.proxyMode}`, `端口来源：${state.snapshot.status.portSource}`, `迁移状态：${state.snapshot.status.migration.migrationStatus}`, '', '动作：r 刷新 | l 显示日志路径']
   };
-  const contentLines = section.id === 'overview' ? overviewPanel.lines : section.id === 'subscriptions' ? subscriptionLines : section.id === 'appearance' ? appearanceLines : section.id === 'latency' ? latencyLines : listLines({
+  const contentLines = section.id === 'cli' ? cliPanel.lines : section.id === 'overview' ? overviewPanel.lines : section.id === 'subscriptions' ? subscriptionLines : section.id === 'appearance' ? appearanceLines : section.id === 'latency' ? latencyLines : listLines({
     title: pageContent[section.id]?.[0] || '总览',
     items: (pageContent[section.id] || pageContent.overview).slice(1).map((text, index) => ({
       id: `${section.id}-${index}`,
@@ -1283,6 +1461,14 @@ export default function App() {
       themeName: previewThemeName,
       width: dimensions.width,
       height: middle
+    }) : ['claude-providers', 'claude-editor', 'cli-confirm', 'cli-progress'].includes(state.modal?.type) ? /*#__PURE__*/_jsx(Panel, {
+      themeName: previewThemeName,
+      width: dimensions.width,
+      height: middle,
+      lines: state.modal.type.startsWith('claude-')
+        ? buildClaudeProviderLines(state.modal, Math.max(1, dimensions.width - 4), Math.max(1, middle - 2))
+        : buildIntegrationModalLines(state.modal, Math.max(1, dimensions.width - 4), Math.max(1, middle - 2)),
+      active: true
     }) : state.modal ? /*#__PURE__*/_jsx(Box, {
       justifyContent: "center",
       children: state.modal.type === 'init-progress' ? /*#__PURE__*/_jsx(InitProgressOverlay, {
@@ -1342,10 +1528,10 @@ export default function App() {
       })]
     }), /*#__PURE__*/_jsx(Text, {
       ...toneProps(previewThemeName, 'dim'),
-      children: padText('Tab 切换区域  Enter 执行动作或激活订阅  / 搜索  f 协议筛选  ? 帮助  q 退出', dimensions.width)
+      children: padText(section.id === 'cli' ? 'Tab 切换区域  1 Codex  2 Claude Code  ↑↓ 选择操作  Enter 执行  ? 帮助  q 退出' : 'Tab 切换区域  Enter 执行动作或激活订阅  / 搜索  f 协议筛选  ? 帮助  q 退出', dimensions.width)
     }), /*#__PURE__*/_jsx(Text, {
       ...toneProps(previewThemeName, 'normal'),
-      children: padText('i 初始化  a 添加订阅  e 修改订阅  y 同步  s 启动  d 测速  p 端口模式  b bashrc  x 删除订阅', dimensions.width)
+      children: padText(section.id === 'cli' ? 'r 本地诊断  PgUp/PgDn 查看结果  修复与写入需确认  进入页面不会自动重启后台进程' : 'i 初始化  a 添加订阅  e 修改订阅  y 同步  s 启动  d 测速  p 端口模式  b bashrc  x 删除订阅', dimensions.width)
     }), /*#__PURE__*/_jsx(Text, {
       ...toneProps(previewThemeName, 'normal'),
       children: padText(state.searchMode ? `搜索中 | 当前区域 ${state.activePane === 'nav' ? '导航' : section.label}` : section.id === 'nodes' ? '↑↓ 切换卡片行  ←→ 切换卡片  Enter 使用节点  v 展开提示  Esc 返回导航' : `当前焦点 ${state.activePane === 'nav' ? '导航' : '内容'} | 当前页面 ${section.label}`, dimensions.width)

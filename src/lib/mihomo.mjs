@@ -33,17 +33,17 @@ export async function api(path, options = {}, currentConfig = createConfig()) {
   return res.text();
 }
 
-export async function isApiAlive(currentConfig = createConfig()) {
+export async function isApiAlive(currentConfig = createConfig(), options = {}) {
   try {
-    await getVersion(currentConfig);
+    await getVersion(currentConfig, options);
     return true;
   } catch {
     return false;
   }
 }
 
-export async function getVersion(currentConfig = createConfig()) {
-  return api('/version', {}, currentConfig);
+export async function getVersion(currentConfig = createConfig(), options = {}) {
+  return api('/version', options, currentConfig);
 }
 
 export async function reloadConfig(path = '', currentConfig = createConfig()) {

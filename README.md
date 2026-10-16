@@ -17,6 +17,14 @@
 
 ## 最新动态
 
+**2026-10-16 · CLI 管理维护更新（VPNCTL 0.1.1）**
+
+- 新增 Codex / Claude Code 双标签 CLI 管理，诊断报告与选项使用分割线分区。
+- Codex Daemon 修复确认后实际执行：按需停止、对齐 CLI 版本、携带 VPNCTL 当前 HTTP 代理环境启动并复查；版本一致但代理环境不同也可修复，不会自动中断任务。
+- 支持 Codex 账号与额度的手动只读查询；无法验证的数据明确标注，不将网络连通等同于登录成功。
+- Claude 新增原生 Anthropic API 账号的增删改查、切换和模型映射，保留动态终端代理及安全配置恢复。
+- OpenAI Chat / Responses 配置目前只能保存，转换服务尚未接通，不能激活；未提供 1M 上下文声明开关。
+
 **2026-10-09 · VPNCTL 0.1.1**
 
 - 节点页按终端宽度显示 1～4 列卡片，低高度时自动使用紧凑列表。
@@ -46,7 +54,7 @@ VPNCTL 当前版本：**0.1.1**，可执行 `vpnctl --version` 查看；这不�
 - [界面预览](#界面预览) · [功能](#功能) · [运行要求](#运行要求)
 - [安装](#安装) · [更新已安装版本](#更新已安装版本) · [离线安装 Mihomo](#离线安装-mihomo)
 - [开始使用](#开始使用) · [订阅管理](#订阅管理) · [端口与联网](#端口与联网)
-- [终端与 Codex 代理](#终端与-codex-代理) · [测试](#测试) · [卸载](#卸载) · [运行数据](#运行数据)
+- [终端与应用代理](#终端与应用代理) · [CLI 管理](#cli-管理) · [测试](#测试) · [卸载](#卸载) · [运行数据](#运行数据)
 
 ## 界面预览
 
@@ -74,6 +82,7 @@ VPNCTL 当前版本：**0.1.1**，可执行 `vpnctl --version` 查看；这不�
 - 默认 `mix` 模式：HTTP 与 SOCKS5 共用混合端口，另设 API 端口
 - 可切换 `separate` 模式：HTTP、SOCKS5 与 API 分别使用端口
 - 对运行时做了账户隔离校验，避免不同系统用户误复用同一个 API 端口
+- CLI 管理双标签：Codex 版本、账号与额度诊断和确认式 Daemon 修复；保留 Claude Code 终端代理与用户配置同步
 
 ## 运行要求
 
@@ -284,7 +293,7 @@ vpnctl config set-ports --proxy-mode separate
 curl --noproxy '' -x http://127.0.0.1:7890 --max-time 15 -I https://www.google.com/
 ```
 
-## 终端与 Codex 代理
+## 终端与应用代理
 
 安装 VPNCTL 的受管 Bash 配置块：
 
@@ -293,9 +302,71 @@ vpnctl shell install
 source ~/.bashrc
 ```
 
-启用后，`codex` 与 `codexvpn` 会在启动时检查本账户受管的 Mihomo，并使用当前有效代理端口；内核未运行时清除相关代理变量。`vpnon`、`vpnoff` 可启用或关闭当前终端的代理变量，`vpnstat` 查看诊断。
+启用后，`codex` / `codexvpn` 和 `claude` / `claudevpn` 会在启动时检查本账户受管的 Mihomo，并为应用子进程注入当前有效 HTTP 代理；`mix` 与 `separate` 模式均从 VPNCTL 当前配置解析端口。应用环境同时设置大小写 HTTP/HTTPS 变量，移除 SOCKS `ALL_PROXY`，保留用户的 `NO_PROXY` 与第三方网关设置，不修改当前 Shell 的环境。代理不可用时拒绝启动应用并给出提示，版本和帮助查询除外。
+
+`vpnon`、`vpnoff` 仍用于启用或关闭**当前终端**的代理变量，`vpnstat` 查看诊断。更新旧包装后应重新打开 SSH 会话，或执行 `source ~/.bashrc`。
 
 这些功能只影响使用该配置的 Bash 会话，不是 TUN 或操作系统全局代理。不同系统账户拥有各自的运行目录、订阅和内核状态。
+
+## CLI 管理
+
+TUI 左侧选择 **CLI 管理**，进入内容区后按 `1` / `2` 切换 **Codex / Claude Code** 标签。上下键选择动作、`Enter` 执行，`PageUp` / `PageDown` 滚动卡片和诊断。此页只负责管理，不提供应用启动按钮；原有终端中的 `codex` / `claude` 代理包装仍保留。进入页面只进行本地诊断，服务网络检测及账号额度读取需手动选择；HTTP 401 等响应不等于账号登录成功。
+
+修复、同步和安装会先展示操作及影响，确认框默认选择取消。应用未安装、代理未启动或后台环境无法读取时会分别说明，不影响 VPNCTL 其他功能。
+
+### Codex Daemon
+
+```bash
+vpnctl integrate codex doctor
+vpnctl integrate codex doctor --network
+vpnctl integrate codex doctor --account --network
+vpnctl integrate codex repair --dry-run
+vpnctl integrate codex repair
+```
+
+诊断 CLI 与后台服务版本、当前用户进程归属及启动时的代理环境。尊重 `CODEX_HOME`；无法核实进程、环境或活跃任务时明确标记未验证，不认定正常。修复先检查当前 CLI 实际支持的命令，确认后按需停止、从本机 CLI 更新并启动 Daemon，再重新验证；不会在每次运行 `codex` 时无条件重启。
+
+Daemon 可能保留旧代理或旧版本，版本不一致也不代表它是所有网络超时的唯一原因。停止后台服务可能影响任务；无法确认活跃任务时也必须明确认可风险。非交互修复须显式提供 `--yes --allow-active`。不兼容功能设置仅报告，不删除应用配置或登录凭据。
+
+修复无法完成时，可在终端手动使用当前 CLI 支持的 `codex --no-daemon`。VPNCTL 不自动清空 Feature Overrides，也不承诺替代应用自身的网络、认证或服务端故障排查。
+
+**账号与额度：** 选择“刷新账号与额度”会通过当前受管 HTTP 代理进行一次官方只读采样，同时检测 OpenAI 连通性。使用当前 CLI 的 `CODEX_HOME`，经独立、短生命周期的 App Server stdio 连接调用 `account/read`（不强制刷新 Token）和 `account/rateLimits/read`；不启动交互式 Codex、不创建会话或推理任务、不重启共享 Daemon，也不直接读取认证文件。邮箱默认脱敏，显示的是当前 CLI 配置账号，不代表已核实共享 Daemon 使用同一账号。
+
+额度按服务实际返回的时长展示：`300` 分钟标为 `5h`，`10080` 分钟标为 `weekly`，其他窗口按其真实时长显示；进度条代表**剩余百分比**，同时显示服务给出的 UTC 重置时间。不同额度桶分别展示，不混合成一个余额。接口提供时显示可用重置次数，明确区分 `0` 与“未提供”；**不提供兑换、购买或自动重置功能**。这些是额度快照，不是现金余额；过了返回的重置时间会提示重新读取，不自行补满。
+
+当前版本、套餐或接口没有返回的数据会显示“未提供”。API Key 模式不推算 ChatGPT 额度或 OpenAI 平台现金余额，未登录、超时和不支持接口分别提示。普通本地刷新不会自动发送账号请求；需要时重新选择账号刷新。接口依据：[OpenAI App Server 官方说明](https://learn.chatgpt.com/docs/app-server)。
+
+### Claude Code
+
+**API 账号管理：** 在 TUI 的 **CLI 管理 → Claude Code → API 账号管理** 中保存多套供应商配置。表单分为基本配置、协议与认证、模型映射：
+
+| 配置项 | 用途 |
+| --- | --- |
+| 供应商名称、请求根地址 | 区分账号；填写服务商 HTTPS API 根地址，不填完整 `/messages` 等请求路径 |
+| API Key / Bearer Token、认证字段 | 按服务商选择 `ANTHROPIC_API_KEY` 或 `ANTHROPIC_AUTH_TOKEN`；密钥不回显，编辑时留空保留 |
+| 上游格式 | Anthropic Messages 原生格式可应用；OpenAI Chat / Responses 目前仅可保存，转换服务未接通，禁止激活 |
+| 默认模型、Sonnet / Opus / Haiku / Subagent | 填写服务商实际模型 ID；可选映射留空时不覆盖 |
+
+账号列表按 `a` 新增、`e` 编辑、`x` 删除、`Enter` 应用所选账号、`b` 恢复原 API 配置。写操作先展示预览，默认取消；按 `Tab` 选择确认再按 `Enter`。表单按 `Tab` / 上下键选择字段，左右键切换选项，`Ctrl+U` 清空当前字段。
+
+“账号”仅指 API 地址和凭据配置，不切换浏览器登录。保存不会自动激活，也不会发送模型请求或验证额度。应用会备份并更新当前用户的 Claude API 与模型字段；已运行会话不会强制重启，请重新启动 Claude。原生格式仍需由服务商支持实际模型和工具调用，不能仅凭保存成功判断可用。
+
+API 中转地址与 VPNCTL 网络代理是两层设置。使用下方终端包装后，`claude` / `claudevpn` 的新进程会读取已应用账号，并动态获取 VPNCTL 当前 HTTP 代理；后台进程仍需单独同步代理。账号存储和备份使用当前用户的私有文件（Linux `0600`），**并非加密保险库**；尊重 `CLAUDE_CONFIG_DIR`，不把密钥写进 bashrc。
+
+```bash
+vpnctl integrate claude install
+vpnctl integrate claude doctor
+vpnctl integrate claude sync --dry-run
+vpnctl integrate claude sync
+```
+
+`install` 仅安装终端包装，不安装 Claude Code 本体。普通会话可直接使用 `claude` 或 `claudevpn`；后台或独立启动的进程可通过 `sync` 将 HTTP 代理合并到 `~/.claude/settings.json` 的 `env` 中，尊重 `CLAUDE_CONFIG_DIR`。
+
+同步仅管理四个 HTTP/HTTPS 大小写代理字段，保留 API Key、模型、MCP、自定义网关、`NO_PROXY` 和其他设置。写入前建立受保护备份，检查冲突并原子保存；不会跟随不安全的配置符号链接。用户原有代理需确认替换，非交互时另加 `--replace-proxy`。
+
+**同步只保证配置写入，不代表正在运行的 Supervisor 已更新环境。** VPNCTL 不会自动重启后台 Agent。请在确认任务安全后，按所安装 Claude Code 版本支持的方式重启或重新启动；目前无法核实的 Supervisor 状态显示为未验证。端口改变后重新诊断并同步。自定义网关不会被改为 Anthropic 官方网关，其可达性应在应用中单独验证。
+
+`vpnctl shell uninstall` 会移除受管包装，并尝试仅恢复 VPNCTL 自己写入且此后未被用户改动的 Claude API 和网络代理字段，保留账号列表及用户其他配置。不会删除 `~/.codex`、`~/.claude`、认证信息或历史会话。
 
 ## 测试
 
@@ -306,10 +377,11 @@ bash scripts/vpnctl.sh test
 bash scripts/vpnctl.sh test subscriptions
 bash scripts/vpnctl.sh test all
 bash scripts/vpnctl.sh test entry
+bash scripts/vpnctl.sh test integrations
 bash scripts/vpnctl.sh tui
 ```
 
-测试菜单按订阅管理、初始化与端口、运行安全、TUI 卡片与布局、Shell 集成和构建入口分类，输出测试明细及通过/失败结果。`test/` 是源码中的自动测试，由脚本统一调用。运行前需安装依赖，并按提示确认可能清理的测试数据；失败不会退出交互菜单。
+测试菜单按订阅管理、初始化与端口、运行安全、TUI 卡片与布局、Shell 集成和构建入口分类，新增第 `8` 项 CLI 管理与应用集成测试，输出测试明细及通过/失败结果。`test/` 是源码中的自动测试，由脚本统一调用。运行前需安装依赖，并按提示确认可能清理的测试数据；失败不会退出交互菜单。
 
 自动测试不代表真实机场节点一定能联网，也不启动实际 Mihomo；`tui` 用于查看界面。无交互输入时，`test` 默认运行全部自动测试并通过退出码报告结果。
 
@@ -328,7 +400,7 @@ bash scripts/vpnctl.sh uninstall
 3. 解除指向本源码目录的全局 npm link，删除受管内核及生成的配置。
 4. 询问是否保留订阅、Provider 缓存及个人配置；删除个人数据需要再次确认。
 
-删除的 Bash 受管块位于以下标记之间，包含 VPNCTL 代理函数、Codex 包装函数及相关别名：
+删除的 Bash 受管块位于以下标记之间，包含 VPNCTL 代理函数、Codex / Claude 包装函数及相关别名：
 
 ```text
 # >>> vpnctl >>>
@@ -342,8 +414,8 @@ bash scripts/vpnctl.sh uninstall
 
 ```bash
 unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy
-unset -f vpnctl-proxy-on vpnctl-proxy-off vpnctl-proxy-status vpnctl-codex-env vpnctl-codex codex
-unalias vpnon vpnoff vpnstat codexvpn 2>/dev/null || true
+unset -f vpnctl-proxy-on vpnctl-proxy-off vpnctl-proxy-status vpnctl-codex-env vpnctl-codex codex vpnctl-claude-env vpnctl-claude claude
+unalias vpnon vpnoff vpnstat codexvpn claudevpn 2>/dev/null || true
 ```
 
 以上命令清除当前会话的代理变量和受管包装，不会卸载 Codex 本身。仅重新执行 `source ~/.bashrc` 不会删除已加载的旧函数。如果曾手动粘贴不带受管标记的旧配置，需另行检查并清理该片段。

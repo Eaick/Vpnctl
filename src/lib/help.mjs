@@ -50,6 +50,16 @@
     example: 'vpnctl shell install --bashrc'
   },
   {
+    command: 'vpnctl integrate codex doctor / repair',
+    meaning: '诊断 Codex CLI、Daemon 与代理；--account 只读读取当前账号、额度和重置次数，--network 检查 OpenAI；repair 先预览确认。',
+    example: 'vpnctl integrate codex doctor --account --network'
+  },
+  {
+    command: 'vpnctl integrate claude doctor / install / sync',
+    meaning: '诊断 Claude Code、安装终端包装，或确认后同步用户级 HTTP 代理；保留登录信息及自定义网关。',
+    example: 'vpnctl integrate claude sync --dry-run'
+  },
+  {
     command: '\u63a8\u8350\u987a\u5e8f',
     meaning: '\u5efa\u8bae\u6309 init -> shell install -> add-sub -> sync -> start -> \u76f4\u63a5\u8fd0\u884c codex \u7684\u987a\u5e8f\u4f7f\u7528\u3002',
     example: 'vpnctl init && vpnctl shell install --bashrc'
@@ -67,6 +77,21 @@
 ];
 
 const TUI_HELP_SECTIONS = [
+  {
+    title: 'CLI 管理',
+    lines: [
+      '内容区 1 / 2：切换 Codex / Claude Code 标签',
+      '上下键选择动作，Enter 执行；PageUp / PageDown 滚动诊断',
+      'r：重新诊断；网络检测必须手动执行，不代表账号认证成功',
+      '修复或同步前展示执行步骤与风险，默认取消；Tab 或左右键选择确认后实际执行',
+      'Codex：版本与环境诊断、OpenAI 网络、只读账号额度、确认式 Daemon 修复；不提供应用启动按钮',
+      '5h / weekly 按实际时长显示剩余进度及重置时间，未提供不等于 0；仅展示可用重置次数，不兑换',
+      'Claude：API 账号管理支持 a 新增、e 编辑、x 删除、Enter 应用、b 恢复；写操作需确认',
+      '账号表单：Tab/上下切字段，左右切选项，Ctrl+U 清空；密钥不回显，编辑留空保留',
+      '原生 Anthropic 账号可激活；OpenAI Chat/Responses 转换未接通，只能保存',
+      'Claude：同步代理后，已运行 Supervisor 的环境仍未验证'
+    ]
+  },
   {
     title: '\u5bfc\u822a',
     lines: [
@@ -141,7 +166,7 @@ export function formatCliHelpText() {
   lines.push('\u63d0\u793a\uff1a');
   lines.push('- \u5f00\u53d1\u9a8c\u8bc1\u4f18\u5148\u4f7f\u7528 vpnctl dev init\u3002');
   lines.push('- \u6b63\u5f0f\u73af\u5883\u4f18\u5148\u4f7f\u7528 vpnctl init\u3002');
-  lines.push('- shell install \u5b8c\u6210\u540e\uff0c\u540c\u8d26\u53f7\u65b0\u4f1a\u8bdd\u53ef\u4ee5\u76f4\u63a5\u8fd0\u884c codex\u3002');
+  lines.push('- shell install 完成后，同账号新会话可直接运行 codex 或 claude；CLI 管理页提供诊断及确认式修复。');
 
   return lines.join('\n');
 }

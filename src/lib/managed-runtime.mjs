@@ -33,7 +33,7 @@ function isLockOwnedByCurrentRuntime(lock, currentConfig, pid) {
     && JSON.stringify(actualPorts) === JSON.stringify(expectedPorts);
 }
 
-export async function getManagedRuntimeStatus(currentConfig = createConfig()) {
+export async function getManagedRuntimeStatus(currentConfig = createConfig(), { signal } = {}) {
   const pid = await readPid(currentConfig);
   const pidAlive = await isPidAlive(pid);
   const runtimeLock = await readRuntimeLock(currentConfig);
@@ -41,7 +41,7 @@ export async function getManagedRuntimeStatus(currentConfig = createConfig()) {
   const processOwned = pidAlive && lockOwned
     ? await matchesManagedProcess(pid, currentConfig, runtimeLock)
     : false;
-  const apiReachable = await isApiAlive(currentConfig);
+  const apiReachable = await isApiAlive(currentConfig, { signal });
   const managedApiAlive = Boolean(apiReachable && processOwned);
 
   return {

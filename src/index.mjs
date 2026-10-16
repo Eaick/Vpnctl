@@ -43,6 +43,12 @@ async function main() {
     process.env.VPNCTL_MODE = 'dev';
   }
 
+  if (command === 'integrate') {
+    const { runIntegrationCommand } = await import('./integrate.mjs');
+    await runIntegrationCommand(rest, flags);
+    return;
+  }
+
   const {
     cmdInit,
     cmdUpgrade,
@@ -155,7 +161,7 @@ async function main() {
   } else if (command === 'delay') {
     await cmdDelay(flags);
   } else if (command === 'env') {
-    await cmdEnv({ shell: flags.shell || 'bash', quiet: Boolean(flags.quiet) });
+    await cmdEnv({ shell: flags.shell || 'bash', quiet: Boolean(flags.quiet), app: flags.app });
   } else if (command === 'doctor') {
     await cmdDoctor();
   } else {

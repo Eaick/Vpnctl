@@ -27,7 +27,7 @@ function createSnapshot(overrides = {}) {
         mixed: { port: 7890, available: true },
         api: { port: 9090, available: true }
       },
-      shellIntegration: { installed: true, codexWrapper: true, bashrcPath: '/home/test/.bashrc' },
+      shellIntegration: { installed: true, codexWrapper: true, claudeWrapper: true, bashrcPath: '/home/test/.bashrc' },
       sessionReuse: { state: 'ready', label: 'ready' },
       ...overrides.status
     }
@@ -67,7 +67,7 @@ test('buildShellGuide explains same-account reuse', () => {
     createSnapshot({
       status: {
         apiAlive: false,
-        shellIntegration: { installed: true, codexWrapper: true },
+        shellIntegration: { installed: true, codexWrapper: true, claudeWrapper: true },
         sessionReuse: { state: 'waiting', label: 'waiting' }
       }
     })
@@ -76,6 +76,8 @@ test('buildShellGuide explains same-account reuse', () => {
 
   const ready = buildShellGuide(createSnapshot()).join('\n');
   assert.match(ready, /codex/);
+  const legacy = buildShellGuide(createSnapshot({ status: { shellIntegration: { installed: true, codexWrapper: true } } })).join('\n');
+  assert.match(legacy, /需要更新/);
 });
 
 test('wizard modal helpers expose mode-aware fields and option cycling', () => {

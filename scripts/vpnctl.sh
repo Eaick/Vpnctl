@@ -88,7 +88,11 @@ test_vpnctl() {
       ;;
     ui)
       label='TUI 卡片、布局与总览'
-      files=(dashboard tui-cards tui-layout tui-latency tui-node-view ui-guidance overview-monitor latency-targets theme help)
+      files=(dashboard tui-cards tui-layout tui-latency tui-node-view cli-management ui-guidance overview-monitor latency-targets theme help)
+      ;;
+    integrations)
+      label='Codex Daemon 与 Claude 代理集成'
+      files=(integration-runtime integration-codex integration-codex-account integration-claude integration-entry integration-shell claude-providers claude-bridge claude-management)
       ;;
     shell) label='Shell 集成与管理脚本'; files=(shell script-menu) ;;
     entry) label='构建入口检查' ;;
@@ -126,7 +130,7 @@ test_menu() {
   while true; do
     printf '\n========== VPNCTL 测试菜单 ==========\n'
     printf '1. 全部自动测试\n2. 订阅管理与同步保护\n3. 初始化、迁移与端口配置\n'
-    printf '4. 运行安全与节点测速接口\n5. TUI 卡片、布局与总览\n6. Shell 集成\n7. 构建入口检查\n0. 返回主菜单\n'
+    printf '4. 运行安全与节点测速接口\n5. TUI 卡片、布局与总览\n6. Shell 集成\n7. 构建入口检查\n8. CLI 管理与应用集成\n0. 返回主菜单\n'
     printf '请选择测试项：'
     read -r choice || return 0
     case "$choice" in
@@ -137,8 +141,9 @@ test_menu() {
       5) suite=ui ;;
       6) suite=shell ;;
       7) suite=entry ;;
+      8) suite=integrations ;;
       0) return 0 ;;
-      *) printf '无效选项，请输入 0-7。\n'; continue ;;
+      *) printf '无效选项，请输入 0-8。\n'; continue ;;
     esac
     # 独立运行，取消或失败时不退出上层菜单。
     bash "$project_root/scripts/vpnctl.sh" test "$suite" || true
@@ -176,9 +181,10 @@ remove_shell_block() {
       bashrc_path="$saved_path"
     fi
   fi
-  if [[ -f "$bashrc_path" ]] && grep -Fq '# >>> vpnctl >>>' "$bashrc_path"; then
+  local claude_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  if { [[ -f "$bashrc_path" ]] && grep -Fq '# >>> vpnctl >>>' "$bashrc_path"; } || [[ -e "$claude_dir/.vpnctl-proxy.json" || -L "$claude_dir/.vpnctl-proxy.json" || -e "$claude_dir/.vpnctl-providers.json" || -L "$claude_dir/.vpnctl-providers.json" ]]; then
     run_vpnctl shell uninstall --bashrc-path "$bashrc_path"
-    if grep -Fq '# >>> vpnctl >>>' "$bashrc_path"; then
+    if [[ -f "$bashrc_path" ]] && grep -Fq '# >>> vpnctl >>>' "$bashrc_path"; then
       printf '受管 bashrc 配置块仍存在，停止卸载：%s\n' "$bashrc_path" >&2
       exit 1
     fi
@@ -191,7 +197,7 @@ uninstall_vpnctl() {
     printf 'HOME 指向根目录，拒绝卸载。\n' >&2
     exit 1
   fi
-  confirm "将停止本账户受管 Mihomo、解除全局 npm link、清除 VPNCTL 管理的 bashrc/Codex 包装。"
+  confirm "将停止本账户受管 Mihomo、解除全局 npm link、清除受管 bashrc/Codex/Claude 包装，并恢复未被用户修改的 Claude 受管 API 与代理字段；保留账号列表。"
 
   if [[ -f "$runtime_root/data/mihomo.pid" ]]; then
     if ! run_vpnctl stop; then
@@ -254,5 +260,5 @@ case "${1:-}" in
     ;;
   tui) cd "$project_root"; run_vpnctl tui ;;
   uninstall) uninstall_vpnctl ;;
-  *) printf '用法：bash scripts/vpnctl.sh [install|uninstall|tui|test [all|subscriptions|ports|runtime|ui|shell|entry]]\n不带参数时显示交互菜单。\n' >&2; exit 2 ;;
+  *) printf '用法：bash scripts/vpnctl.sh [install|uninstall|tui|test [all|subscriptions|ports|runtime|ui|shell|integrations|entry]]\n不带参数时显示交互菜单。\n' >&2; exit 2 ;;
 esac

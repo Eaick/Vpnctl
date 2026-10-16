@@ -80,11 +80,45 @@ export async function readClaudeProviderStore({ env = process.env } = {}) {
   return { where, snapshot, value };
 }
 
+function existingSettingsProfile(settings, profiles, id = randomUUID()) {
+  if (!settings.exists) return { status: 'missing', label: '尚无 settings.json；已有配置使用标准复数文件名 settings.json。' };
+  const vars = settings.value.env || {};
+  if (['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY'].some(key => ['1', 'true'].includes(String(vars[key]).toLowerCase()))) {
+    return { status: 'unsupported', label: '已有配置使用云提供方模式，未按普通 API 账号导入。' };
+  }
+  const token = vars.ANTHROPIC_AUTH_TOKEN, key = vars.ANTHROPIC_API_KEY;
+  if ([token, key].some(value => value !== undefined && typeof value !== 'string')) return { status: 'invalid', label: '已有认证字段不是字符串，未导入。' };
+  if (token?.trim() && key?.trim()) return { status: 'ambiguous', label: '已有配置同时包含两种认证凭据，请先明确使用哪一种，未猜测认证方式。' };
+  if (!token?.trim() && !key?.trim()) return { status: 'unavailable', label: 'settings.json 中未发现 API Key/Token；不读取网页登录凭据或执行 apiKeyHelper。' };
+  try {
+    const input = { name: '已有 Claude 配置', baseUrl: vars.ANTHROPIC_BASE_URL || 'https://api.anthropic.com',
+      authType: token?.trim() ? 'bearer' : 'api-key', secret: token?.trim() ? token : key };
+    for (const [field, variable] of Object.entries(models)) input[field] = vars[variable] || (field === 'model' && typeof settings.value.model === 'string' ? settings.value.model : '');
+    const candidate = normalizeClaudeProvider(input, null, id);
+    const sameAccount = profile => profile.baseUrl === candidate.baseUrl && profile.authType === candidate.authType && profile.secret === candidate.secret && profile.protocol === 'anthropic';
+    const matching = profiles.find(profile => sameAccount(profile) && Object.keys(models).every(field => profile[field] === candidate[field])) || profiles.find(sameAccount);
+    if (matching) { candidate.id = matching.id; candidate.name = matching.name; }
+    else {
+      let index = 2;
+      while (profiles.some(profile => profile.name === candidate.name)) candidate.name = `${input.name} (${index++})`;
+    }
+    return { status: 'available', label: matching ? `已有配置已识别为 ${matching.name}；按 i 预览同步保存记录。` : '发现已有 Claude API 配置，按 i 预览导入。', profile: candidate, matchingId: matching?.id || null };
+  } catch {
+    return { status: 'invalid', label: '已有 API 地址、凭据或模型字段无效，未导入；未输出原始配置。' };
+  }
+}
+
 export async function listClaudeProviders(options = {}) {
   const loaded = await readClaudeProviderStore(options);
+  let existing;
+  try {
+    const settings = parseSettings(await readPrivateSnapshot(loaded.where.settingsPath, fs));
+    const found = existingSettingsProfile(settings, loaded.value.profiles);
+    existing = { ...found, ...(found.profile ? { profile: publicProfile(found.profile) } : {}), settingsPath: loaded.where.settingsPath };
+  } catch { existing = { status: 'invalid', label: '无法安全读取 settings.json，请检查 JSON、文件路径和所有权；保存的账号仍可查看。' }; }
   return { profiles: loaded.value.profiles.map(profile => ({ ...publicProfile(profile), active: profile.id === loaded.value.activeId,
     pending: profile.id === loaded.value.activeId && digest(encode(profile)) !== loaded.value.applied?.revision })), activeId: loaded.value.activeId,
-    active: loaded.value.applied ? publicProfile(loaded.value.applied.profile) : null, path: loaded.where.storePath };
+    active: loaded.value.applied ? publicProfile(loaded.value.applied.profile) : null, path: loaded.where.storePath, existing };
 }
 
 export function parseLegacyAccounts(source) {
@@ -148,10 +182,22 @@ export async function prepareClaudeProviderAction(action, { env = process.env, i
     if (settings.value.apiKeyHelper) plan.warnings.push('检测到 apiKeyHelper，未修改；请检查它是否与新凭据冲突。');
   } else if (action === 'delete') {
     if (!profile) fail('账号不存在');
-    if (loaded.value.activeId === profile.id) { plan.allowed = false; plan.warnings.push('请先恢复原配置或激活其他账号，再删除当前账号'); }
+    if (loaded.value.activeId === profile.id) {
+      plan.steps.push({ label: '退出当前账号激活，备份并恢复仍由 VPNCTL 管理、未被用户改动的 API 字段' });
+      plan.warnings.push('即使只剩一个账号也可删除；不会自动激活其他账号。此前已有的外部配置仍保留，可能继续出现在已有配置提示中。');
+    }
     plan.steps.push({ label: `删除保存的账号 ${profile.name}，不删除其他账号` });
   } else if (action === 'restore') {
     plan.steps.push({ label: '仅恢复 VPNCTL 写入且未被用户更改的 API 字段，保留账号列表' });
+  } else if (action === 'import-settings') {
+    const found = existingSettingsProfile(settings, loaded.value.profiles);
+    if (found.status !== 'available') fail(found.label);
+    plan.id = found.profile.id;
+    plan.profile = publicProfile(found.profile);
+    plan.payloadDigest = digest(encode(found.profile));
+    declarations = modelsWith1m(found.profile);
+    plan.steps.push({ label: `${found.matchingId ? '更新' : '导入'}已有配置为账号 ${found.profile.name}；仅保存，不接管激活状态，不修改源 settings.json` });
+    plan.warnings.push('仅读取 settings.json 内 API 地址、认证和已支持的模型字段；不读取登录文件、不执行 apiKeyHelper、不联网验证。');
   } else if (action === 'import') {
     const snapshot = await readPrivateSnapshot(path.resolve(file), fs);
     if (!snapshot.exists || snapshot.text.length > 1048576) fail('导入文件不存在或过大');
@@ -171,6 +217,17 @@ export async function prepareClaudeProviderAction(action, { env = process.env, i
     }
   }
   return plan;
+}
+
+function restoreOwnedFields(next, settings) {
+  const restored = structuredClone(settings);
+  restored.env ||= {};
+  for (const [key, entry] of Object.entries(next.ownership)) {
+    if ((restored.env[key] ?? null) !== entry.written) continue;
+    if (entry.previous.exists) restored.env[key] = entry.previous.value; else delete restored.env[key];
+  }
+  next.ownership = {}; next.activeId = null; next.applied = null;
+  return restored;
 }
 
 async function commit(loaded, settings, next, nextSettings) {
@@ -213,8 +270,16 @@ export async function executeClaudeProviderAction(plan, { env = process.env, inp
       if (next.profiles.some(item => item.id !== profile.id && item.name === profile.name)) fail('账号名称已存在');
       if (index >= 0) next.profiles[index] = profile; else next.profiles.push(profile);
     } else if (plan.action === 'delete') {
-      if (next.activeId === plan.id) fail('请先恢复原配置或切换其他账号，再删除当前账号');
+      if (!next.profiles.some(profile => profile.id === plan.id)) fail('账号不存在，请重新载入');
+      if (next.activeId === plan.id) nextSettings = restoreOwnedFields(next, settings.value);
       next.profiles = next.profiles.filter(profile => profile.id !== plan.id);
+    }
+    else if (plan.action === 'import-settings') {
+      const found = existingSettingsProfile(settings, next.profiles, plan.id);
+      if (found.status !== 'available' || digest(encode(found.profile)) !== plan.payloadDigest) fail('已有配置已变化，请重新预览');
+      require1mAcknowledgement([found.profile], acknowledge1m);
+      const index = next.profiles.findIndex(profile => profile.id === found.profile.id);
+      if (index >= 0) next.profiles[index] = found.profile; else next.profiles.push(found.profile);
     }
     else if (plan.action === 'import') {
       const imported = await readPrivateSnapshot(plan.file, fs);
@@ -239,16 +304,14 @@ export async function executeClaudeProviderAction(plan, { env = process.env, inp
       next.activeId = profile.id;
       next.applied = { revision: digest(encode(profile)), profile: structuredClone(profile), target };
     } else if (plan.action === 'restore') {
-      nextSettings = structuredClone(settings.value); nextSettings.env ||= {};
-      for (const [key, entry] of Object.entries(next.ownership)) {
-        if ((nextSettings.env[key] ?? null) !== entry.written) continue;
-        if (entry.previous.exists) nextSettings.env[key] = entry.previous.value; else delete nextSettings.env[key];
-      }
-      next.ownership = {}; next.activeId = null; next.applied = null;
+      nextSettings = restoreOwnedFields(next, settings.value);
     }
     if (next.profiles.length > 100) fail('最多保存 100 套 API 账号');
     const backupPath = await commit(loaded, settings, next, nextSettings);
-    return { ok: true, id: plan.id, backupPath, message: plan.action === 'apply' ? 'API 账号已应用；新会话生效。网络代理继续由 VPNCTL 动态提供。' : 'API 账号操作已完成；未修改 Codex 或 bashrc。' };
+    return { ok: true, id: plan.id, backupPath, message: plan.action === 'apply' ? 'API 账号已应用；新会话生效。网络代理继续由 VPNCTL 动态提供。'
+      : plan.action === 'delete' && loaded.value.activeId === plan.id ? '当前账号已删除并退出激活，已恢复受管 API 字段；原有外部配置及正在运行的会话未被删除。'
+        : plan.action === 'import-settings' ? '已有 Claude API 配置已保存；源 settings.json 和当前激活状态保持不变。'
+          : 'API 账号操作已完成；未修改 Codex 或 bashrc。' };
   });
 }
 

@@ -22,7 +22,7 @@ import { getNodeNotices, getSelectableNodes } from '../lib/tui-node-view.mjs';
 import { VPNCTL_VERSION } from '../lib/version.mjs';
 import { inspectIntegration, prepareIntegrationAction, executeIntegrationAction, installApplicationIntegration, redactText } from '../lib/integrations/index.mjs';
 import { buildCliManagementLines, buildIntegrationModalLines, getCliActions } from '../lib/cli-management.mjs';
-import { buildClaudeProviderLines, createClaudeProviderEditor, readClaudeProviderInput } from '../lib/claude-management.mjs';
+import { buildClaudeProviderLines, createClaudeProviderEditor, readClaudeProviderInput, getClaudeProviderPreviewLayout } from '../lib/claude-management.mjs';
 import { listClaudeProviders, prepareClaudeProviderAction, executeClaudeProviderAction } from '../lib/integrations/claude-providers.mjs';
 import { resolveApplicationProxy } from '../lib/integrations/runtime.mjs';
 import { formatActionPreview } from '../integrate.mjs';
@@ -542,7 +542,7 @@ export default function App({ initialSection = 'overview', initialCliApp = 'code
   const openClaudeProviders = async (selectedId) => {
     const listing = await listClaudeProviders();
     const selected = Math.max(0, listing.profiles.findIndex(profile => profile.id === (selectedId || listing.activeId)));
-    updateState(next => { next.modal = { type: 'claude-providers', listing, selected }; });
+    updateState(next => { next.modal = { type: 'claude-providers', listing, selected, previewScroll: 0 }; });
   };
   const previewClaudeProvider = async (action, options = {}) => {
     const context = action === 'apply' ? await resolveApplicationProxy() : undefined;
@@ -751,14 +751,19 @@ export default function App({ initialSection = 'overview', initialCliApp = 'code
         const modal = state.modal;
         const profile = modal.listing.profiles[modal.selected];
         if (key.escape) updateState(next => { next.modal = null; });
+        else if (key.pageUp || key.pageDown) {
+          const layout = getClaudeProviderPreviewLayout(modal, Math.max(1, dimensions.width - 4), Math.max(1, middle - 2));
+          updateState(next => { next.modal.previewScroll = Math.max(0, Math.min(layout.maxScroll, (modal.previewScroll || 0) + (key.pageUp ? -1 : 1) * Math.max(1, layout.pageHeight))); });
+        }
         else if (key.upArrow || key.downArrow) updateState(next => {
           next.modal.selected = moveSelection(modal.selected, key.upArrow ? -1 : 1, modal.listing.profiles.length);
+          next.modal.previewScroll = 0;
         });
         else if (input === 'a' || input === 'e' && profile) updateState(next => {
           next.modal = createClaudeProviderEditor(input === 'e' ? profile : {});
         });
-        else if (input === 'b' || profile && (key.return || input === 'x')) await withBusy(async () => {
-          await previewClaudeProvider(input === 'b' ? 'restore' : input === 'x' ? 'delete' : 'apply', { id: profile?.id });
+        else if (input === 'b' || input === 'i' || profile && (key.return || input === 'x')) await withBusy(async () => {
+          await previewClaudeProvider(input === 'i' ? 'import-settings' : input === 'b' ? 'restore' : input === 'x' ? 'delete' : 'apply', input === 'i' ? {} : { id: profile?.id });
         }, null);
         return;
       }

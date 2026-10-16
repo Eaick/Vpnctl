@@ -64,8 +64,8 @@ test('native accounts apply, switch, and restore only owned API fields while pre
   assert.equal(child.ANTHROPIC_API_KEY, 'second-fixture');
   assert.equal(child.HTTPS_PROXY, 'http://127.0.0.1:34567');
   const deleteCurrent = await prepareClaudeProviderAction('delete', { env, id: second.id });
-  assert.equal(deleteCurrent.allowed, false);
-  await assert.rejects(executeClaudeProviderAction(deleteCurrent, { env, confirmed: true }), /条件/);
+  assert.equal(deleteCurrent.allowed, true);
+  await assert.rejects(executeClaudeProviderAction(deleteCurrent, { env }), /确认/);
   const changed = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
   changed.env.ANTHROPIC_MODEL = 'user-edited-model';
   await fs.writeFile(settingsPath, JSON.stringify(changed));
@@ -75,6 +75,117 @@ test('native accounts apply, switch, and restore only owned API fields while pre
   delete restored.env.ANTHROPIC_MODEL;
   assert.deepEqual(restored, original);
   assert.equal((await listClaudeProviders({ env })).profiles.length, 2);
+}));
+
+test('the sole active account can be deleted after confirmation and owned settings are safely restored', async () => fixture(async ({ env, dir }) => {
+  const settingsPath = path.join(dir, 'settings.json');
+  const original = { env: { HTTPS_PROXY: 'http://127.0.0.1:23456', NO_PROXY: '.internal' }, hooks: { Stop: [] }, model: 'user-model' };
+  await fs.writeFile(settingsPath, JSON.stringify(original));
+  const save = await prepareClaudeProviderAction('save', { env, input: account });
+  const saved = await executeClaudeProviderAction(save, { env, input: account, confirmed: true });
+  const apply = await prepareClaudeProviderAction('apply', { env, id: saved.id, context: { available: true } });
+  await executeClaudeProviderAction(apply, { env, confirmed: true, context: { available: true } });
+  const deletion = await prepareClaudeProviderAction('delete', { env, id: saved.id });
+  assert.equal(deletion.allowed, true);
+  assert.match(deletion.steps.map(step => step.label).join('\n'), /退出激活|恢复/);
+  await assert.rejects(executeClaudeProviderAction(deletion, { env }), /确认/);
+  assert.equal((await listClaudeProviders({ env })).activeId, saved.id);
+  const result = await executeClaudeProviderAction(deletion, { env, confirmed: true });
+  assert.ok(result.backupPath);
+  const listing = await listClaudeProviders({ env });
+  assert.equal(listing.profiles.length, 0);
+  assert.equal(listing.activeId, null);
+  assert.deepEqual(JSON.parse(await fs.readFile(settingsPath, 'utf8')), original);
+}));
+
+test('existing settings are discovered without exposing credentials and imported idempotently without source writes', async () => fixture(async ({ env, dir }) => {
+  const settingsPath = path.join(dir, 'settings.json');
+  const original = JSON.stringify({ model: 'top-level-model', env: { ANTHROPIC_BASE_URL: 'https://existing.example.com', ANTHROPIC_AUTH_TOKEN: 'existing-fixture-secret', ANTHROPIC_DEFAULT_SONNET_MODEL: 'mapped-model' }, mcpServers: { fixture: {} } });
+  await fs.writeFile(settingsPath, original);
+  const listing = await listClaudeProviders({ env });
+  assert.equal(listing.existing.status, 'available');
+  assert.equal(listing.existing.profile.model, 'top-level-model');
+  assert.equal(listing.profiles.length, 0, 'discovery must not silently create saved accounts');
+  assert.ok(!JSON.stringify(listing).includes('existing-fixture-secret'));
+  const plan = await prepareClaudeProviderAction('import-settings', { env });
+  assert.ok(!JSON.stringify(plan).includes('existing-fixture-secret'));
+  await assert.rejects(executeClaudeProviderAction(plan, { env }), /确认/);
+  await executeClaudeProviderAction(plan, { env, confirmed: true });
+  const imported = await listClaudeProviders({ env });
+  assert.equal(imported.profiles.length, 1);
+  assert.equal(imported.activeId, null, 'import must not take over the existing account');
+  assert.equal(imported.existing.matchingId, imported.profiles[0].id);
+  const again = await prepareClaudeProviderAction('import-settings', { env });
+  await executeClaudeProviderAction(again, { env, confirmed: true });
+  assert.equal((await listClaudeProviders({ env })).profiles.length, 1);
+  assert.equal(await fs.readFile(settingsPath, 'utf8'), original);
+}));
+
+test('invalid or ambiguous existing settings do not hide saved accounts or guess authentication', async () => fixture(async ({ env, dir }) => {
+  const save = await prepareClaudeProviderAction('save', { env, input: account });
+  await executeClaudeProviderAction(save, { env, input: account, confirmed: true });
+  const settingsPath = path.join(dir, 'settings.json');
+  await fs.writeFile(settingsPath, '{invalid');
+  assert.equal((await listClaudeProviders({ env })).profiles.length, 1);
+  assert.equal((await listClaudeProviders({ env })).existing.status, 'invalid');
+  await fs.writeFile(settingsPath, JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://existing.example.com', ANTHROPIC_API_KEY: 'key-fixture', ANTHROPIC_AUTH_TOKEN: 'token-fixture' } }));
+  assert.equal((await listClaudeProviders({ env })).existing.status, 'ambiguous');
+  await assert.rejects(prepareClaudeProviderAction('import-settings', { env }), /两种认证|两种凭据/);
+  await fs.writeFile(settingsPath, JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://existing.example.com', ANTHROPIC_API_KEY: 'key-fixture' } }));
+  const stale = await prepareClaudeProviderAction('import-settings', { env });
+  await fs.writeFile(settingsPath, '{}');
+  await assert.rejects(executeClaudeProviderAction(stale, { env, confirmed: true }), /变化/);
+}));
+
+test('importing existing settings never overwrites a different selected account', async () => fixture(async ({ env, dir }) => {
+  const save = await prepareClaudeProviderAction('save', { env, input: account });
+  const saved = await executeClaudeProviderAction(save, { env, input: account, confirmed: true });
+  await fs.writeFile(path.join(dir, 'settings.json'), JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://another.example.com', ANTHROPIC_API_KEY: 'another-fixture' } }));
+  const plan = await prepareClaudeProviderAction('import-settings', { env, id: saved.id });
+  assert.notEqual(plan.id, saved.id);
+  await executeClaudeProviderAction(plan, { env, confirmed: true });
+  const listing = await listClaudeProviders({ env });
+  assert.equal(listing.profiles.length, 2);
+  assert.equal(listing.profiles.find(profile => profile.id === saved.id).baseUrl, account.baseUrl);
+}));
+
+test('deleting an active account preserves external edits and never activates remaining accounts', async () => fixture(async ({ env, dir }) => {
+  const firstPlan = await prepareClaudeProviderAction('save', { env, input: account });
+  const first = await executeClaudeProviderAction(firstPlan, { env, input: account, confirmed: true });
+  const other = { ...account, name: '保留账号', baseUrl: 'https://keep.example.com' };
+  const otherPlan = await prepareClaudeProviderAction('save', { env, input: other });
+  await executeClaudeProviderAction(otherPlan, { env, input: other, confirmed: true });
+  const context = { available: true };
+  await executeClaudeProviderAction(await prepareClaudeProviderAction('apply', { env, id: first.id, context }), { env, context, confirmed: true });
+  const settingsPath = path.join(dir, 'settings.json');
+  const settings = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
+  settings.env.ANTHROPIC_MODEL = 'external-model-change';
+  settings.hooks = { Stop: ['external-hook'] };
+  await fs.writeFile(settingsPath, JSON.stringify(settings));
+  const deletion = await prepareClaudeProviderAction('delete', { env, id: first.id });
+  await executeClaudeProviderAction(deletion, { env, confirmed: true });
+  const listing = await listClaudeProviders({ env });
+  assert.equal(listing.profiles.length, 1);
+  assert.equal(listing.profiles[0].name, other.name);
+  assert.equal(listing.activeId, null);
+  const kept = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
+  assert.equal(kept.env.ANTHROPIC_MODEL, 'external-model-change');
+  assert.deepEqual(kept.hooks, settings.hooks);
+}));
+
+test('settings import preserves 1M consent and does not read browser login credentials', async () => fixture(async ({ env, dir }) => {
+  const settingsPath = path.join(dir, 'settings.json');
+  await fs.writeFile(settingsPath, JSON.stringify({ env: { ANTHROPIC_API_KEY: 'official-fixture', ANTHROPIC_MODEL: 'model[1m]' } }));
+  const listing = await listClaudeProviders({ env });
+  assert.equal(listing.existing.profile.baseUrl, 'https://api.anthropic.com');
+  const plan = await prepareClaudeProviderAction('import-settings', { env });
+  assert.equal(plan.requires1mConfirmation, true);
+  await assert.rejects(executeClaudeProviderAction(plan, { env, confirmed: true }), /确认.*1M/);
+  await executeClaudeProviderAction(plan, { env, confirmed: true, acknowledge1m: true });
+  await fs.writeFile(settingsPath, JSON.stringify({ env: { CLAUDE_CODE_OAUTH_TOKEN: 'oauth-fixture' } }));
+  const oauth = await listClaudeProviders({ env });
+  assert.equal(oauth.existing.status, 'unavailable');
+  assert.ok(!JSON.stringify(oauth).includes('oauth-fixture'));
 }));
 
 test('unfinished conversion never changes Claude settings and stale previews are rejected', async () => fixture(async ({ env, dir }) => {

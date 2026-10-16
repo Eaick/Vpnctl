@@ -9,6 +9,7 @@ import { Writable, PassThrough } from 'node:stream';
 import React from 'react';
 import { render } from 'ink';
 import { buildCliManagementLines, buildIntegrationModalLines, getCliActions, formatCodexQuotaLines, formatQuotaProgress } from '../src/lib/cli-management.mjs';
+import { prepareClaudeProviderAction, executeClaudeProviderAction } from '../src/lib/integrations/claude-providers.mjs';
 
 const report = {
   installed: true, cliVersion: '0.162.1', proxy: { available: true, endpoint: 'http://127.0.0.1:23456' },
@@ -181,6 +182,8 @@ test('actual CLI page switches apps, opens a cancel-first preview and fits commo
         assert.ok(!await fs.stat(path.join(temp, 'claude', 'settings.json')).then(() => true, () => false));
         await key('\x1b[B'); await key('\r');
         await waitFor(() => frame().includes('API 账号管理'));
+        assert.ok(frame().includes('JSON 预览'));
+        assert.ok(frame().includes('无阅览'));
         await key('a');
         await waitFor(() => frame().includes('供应商名称'));
         await key(`测试账号${width}`); await key('\t');
@@ -202,6 +205,10 @@ test('actual CLI page switches apps, opens a cancel-first preview and fits commo
         await key('\x1b');
         await waitFor(() => frame().includes('API 账号管理'));
         assert.ok(frame().includes(`测试账号${width}`));
+        assert.ok(frame().includes('JSON 预览'));
+        await key('\x1b[6~'); await key('\x1b[5~');
+        assert.ok(frame().includes(`测试账号${width}`), 'preview paging must not change the selected account');
+        assert.ok(frame().trimEnd().split('\n').every(line => stringWidth(line) <= width));
         await key('e');
         await waitFor(() => frame().includes('编辑 Claude API'));
         assert.ok(!frame().includes('ui-fixture-secret'));
@@ -219,6 +226,32 @@ test('actual CLI page switches apps, opens a cancel-first preview and fits commo
         await key('\x1b');
         await waitFor(() => frame().includes('尚无 API 账号'));
         assert.ok(!chunks.join('').includes('ui-fixture-secret'), 'credentials must never reach terminal output');
+        const settingsPath = path.join(temp, 'claude', 'settings.json');
+        const original = JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://existing.example.com', ANTHROPIC_API_KEY: 'settings-fixture-secret', ANTHROPIC_MODEL: 'existing-model' }, hooks: { Stop: [] } });
+        await fs.writeFile(settingsPath, original);
+        await key('\x1b'); await key('\r');
+        await waitFor(() => frame().includes('发现已有 Claude API 配置'));
+        await key('i');
+        await waitFor(() => frame().includes('确认应用集成操作'));
+        assert.ok(frame().includes('[取消]'));
+        assert.ok(!frame().includes('settings-fixture-secret'));
+        await key('\t'); await key('\r');
+        await waitFor(() => frame().includes('操作结束'));
+        assert.equal(await fs.readFile(settingsPath, 'utf8'), original, 'import must not rewrite existing settings');
+        const imported = JSON.parse(await fs.readFile(path.join(temp, 'claude', '.vpnctl-providers.json'), 'utf8')).profiles[0];
+        const apply = await prepareClaudeProviderAction('apply', { id: imported.id, context: { available: true } });
+        await executeClaudeProviderAction(apply, { context: { available: true }, confirmed: true });
+        await key('\x1b');
+        await waitFor(() => frame().includes('[当前]'));
+        await key('x');
+        await waitFor(() => frame().includes('确认应用集成操作'));
+        await key('\t'); await key('\r');
+        await waitFor(() => frame().includes('当前账号已删除') && frame().includes('操作结束'));
+        await key('\x1b');
+        await waitFor(() => frame().includes('尚无 API 账号'));
+        assert.deepEqual(JSON.parse(await fs.readFile(settingsPath, 'utf8')), JSON.parse(original));
+        assert.ok(!chunks.join('').includes('settings-fixture-secret'));
+        await fs.rm(settingsPath);
       } finally { app.unmount(); app.cleanup(); }
     }
   } finally {

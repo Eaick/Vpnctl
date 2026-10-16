@@ -1,8 +1,9 @@
 import { getVisibleWindow, padText } from './tui-layout.mjs';
+import stringWidth from 'string-width';
 
 export const CLAUDE_PROTOCOL_LABELS = { anthropic: 'Anthropic Messages（原生）', 'openai-chat': 'OpenAI Chat（转换未接通）', 'openai-responses': 'OpenAI Responses（转换未接通）' };
 const field = (key, label, value, extra = {}) => ({ key, label, value: value || '', ...extra });
-const modelRoles = [['model', '默认实际模型'], ['sonnet', 'Sonnet → 实际模型'], ['opus', 'Opus → 实际模型'], ['haiku', 'Haiku → 实际模型'], ['subagent', 'Subagent → 实际模型']];
+const modelRoles = [['model', '默认实际模型', 'ANTHROPIC_MODEL'], ['sonnet', 'Sonnet → 实际模型', 'ANTHROPIC_DEFAULT_SONNET_MODEL'], ['opus', 'Opus → 实际模型', 'ANTHROPIC_DEFAULT_OPUS_MODEL'], ['haiku', 'Haiku → 实际模型', 'ANTHROPIC_DEFAULT_HAIKU_MODEL'], ['subagent', 'Subagent → 实际模型', 'CLAUDE_CODE_SUBAGENT_MODEL']];
 const contextSuffix = /(?:\[1m\])+$/i;
 
 function modelFields(profile) {
@@ -41,13 +42,60 @@ export function readClaudeProviderInput(modal) {
   return input;
 }
 
+export function createClaudeProviderPreview(profile) {
+  if (!profile) return null;
+  if (profile.protocol && profile.protocol !== 'anthropic') {
+    return { protocol: profile.protocol, baseUrl: profile.baseUrl, authType: profile.authType || 'bearer', secret: '[已隐藏]',
+      ...Object.fromEntries(modelRoles.filter(([key]) => profile[key]).map(([key]) => [key, profile[key]])) };
+  }
+  const env = { ANTHROPIC_BASE_URL: profile.baseUrl, [profile.authType === 'api-key' ? 'ANTHROPIC_API_KEY' : 'ANTHROPIC_AUTH_TOKEN']: '[已隐藏]' };
+  for (const [key, , variable] of modelRoles) if (profile[key]) env[variable] = profile[key];
+  if (profile.effort) env.CLAUDE_CODE_EFFORT_LEVEL = profile.effort;
+  return { env };
+}
+
+function wrapPreview(text, width) {
+  if (width <= 0) return [];
+  return text.split('\n').flatMap(paragraph => {
+    const lines = [];
+    let row = '', used = 0;
+    for (const char of paragraph) {
+      const glyph = stringWidth(char) > width ? '?' : char;
+      const size = stringWidth(glyph);
+      if (used + size > width) { lines.push(row); row = ''; used = 0; }
+      row += glyph; used += size;
+    }
+    lines.push(row);
+    return lines;
+  });
+}
+
+export function getClaudeProviderPreviewLayout(modal, width, height) {
+  const w = Math.max(1, width), h = Math.max(1, height);
+  const dividerWidth = w >= 3 ? 1 : 0;
+  const leftWidth = dividerWidth ? Math.floor((w - 1) * 0.55) : w;
+  const rightWidth = w - dividerWidth - leftWidth;
+  const profiles = modal.listing?.profiles || [];
+  const profile = profiles[Math.max(0, Math.min(modal.selected || 0, profiles.length - 1))];
+  const preview = createClaudeProviderPreview(profile);
+  const content = wrapPreview(preview ? JSON.stringify(preview, null, 2) : '无阅览', rightWidth);
+  const pageHeight = Math.max(0, h - 3);
+  const maxScroll = pageHeight ? Math.max(0, content.length - pageHeight) : 0;
+  const offset = Math.max(0, Math.min(modal.previewScroll || 0, maxScroll));
+  const title = profile?.protocol && profile.protocol !== 'anthropic' ? 'JSON 预览（未接通，仅保存）' : 'JSON 预览（脱敏，只读）';
+  const lines = [{ text: padText(title, rightWidth), tone: 'accent' }, ...content.slice(offset, offset + pageHeight).map(text => ({ text: padText(text, rightWidth), tone: 'normal' }))];
+  return { leftWidth, rightWidth, dividerWidth, lines, pageHeight, maxScroll };
+}
+
 export function buildClaudeProviderLines(modal, width, height) {
   const w = Math.max(1, width), h = Math.max(1, height);
-  const line = (text, tone = 'normal') => ({ text: padText(String(text).replace(/[\x00-\x1f\x7f]/g, ' '), w), tone });
+  const preview = modal.type === 'claude-providers' ? getClaudeProviderPreviewLayout(modal, w, h) : null;
+  const line = (text, tone = 'normal', size = w) => ({ text: padText(String(text).replace(/[\x00-\x1f\x7f]/g, ' '), size), tone });
+  const bodyLine = (text, tone = 'normal') => line(text, tone, preview?.leftWidth || w);
   const title = modal.type === 'claude-editor' ? `${modal.id ? '编辑' : '新增'} Claude API 账号 · 仅保存，不自动切换` : 'Claude Code · API 账号管理';
   const footer = modal.type === 'claude-editor'
     ? 'Tab/↑↓ 字段 · ←→ 选项 · Ctrl+U 清空 · Enter 保存预览 · Esc 返回'
-    : '↑↓ 选择 · a 新增 · e 编辑 · x 删除 · Enter 应用 · b 恢复 · Esc 返回';
+    : '↑↓账号 a增 e改 x删 i读取配置 Enter应用 b恢复 PgUp/Dn预览 Esc返回';
   const body = [];
   let focus = 0;
   if (modal.type === 'claude-editor') {
@@ -60,20 +108,35 @@ export function buildClaudeProviderLines(modal, width, height) {
       if (selected && item.hint) body.push(line(item.hint, 'dim'));
     }
   } else {
-    body.push(line('API 中转地址 ≠ VPNCTL 网络代理；应用账号不会测试或扣费。', 'dim'));
+    body.push(bodyLine('API 中转地址 ≠ VPNCTL 网络代理；应用账号不会测试或扣费。', 'dim'));
+    const existing = modal.listing?.existing;
+    if (existing) {
+      body.push(bodyLine(`已有配置：${existing.label}`, ['invalid', 'ambiguous'].includes(existing.status) ? 'warn' : 'dim'));
+      if (existing.profile) body.push(bodyLine(`  ${existing.profile.baseUrl} · 模型 ${existing.profile.model || 'Claude 默认'} · 凭据已隐藏`, 'dim'));
+    }
     const profiles = modal.listing?.profiles || [];
-    if (!profiles.length) body.push(line('尚无 API 账号，按 a 新增。'));
+    if (!profiles.length) body.push(bodyLine(existing?.status === 'available' ? '尚无 API 账号，按 i 导入已有配置或 a 新增。' : '尚无 API 账号，按 a 新增。'));
     for (const [index, profile] of profiles.entries()) {
       const selected = index === modal.selected;
       if (selected) focus = body.length;
-      body.push(line(`${selected ? '►' : ' '} ${profile.active ? '[当前]' : '[已保存]'} ${profile.name}${profile.pending ? '（修改未应用）' : ''}`, selected ? 'selected' : 'normal'));
-      body.push(line(`  ${CLAUDE_PROTOCOL_LABELS[profile.protocol]}${profile.protocol !== 'anthropic' ? ' · 不可激活' : ''}`, 'dim'));
-      body.push(line(`  ${profile.baseUrl} · 模型 ${profile.model || 'Claude 默认'}`, 'dim'));
+      body.push(bodyLine(`${selected ? '►' : ' '} ${profile.active ? '[当前]' : '[已保存]'} ${profile.name}${profile.pending ? '（修改未应用）' : ''}`, selected ? 'selected' : 'normal'));
+      body.push(bodyLine(`  ${CLAUDE_PROTOCOL_LABELS[profile.protocol]}${profile.protocol !== 'anthropic' ? ' · 不可激活' : ''}`, 'dim'));
+      body.push(bodyLine(`  ${profile.baseUrl} · 模型 ${profile.model || 'Claude 默认'}`, 'dim'));
     }
-    if (modal.listing?.active) body.push(line(`已应用：${modal.listing.active.name}；请在新 Claude 会话中使用。`, 'accent'));
+    if (modal.listing?.active) body.push(bodyLine(`已应用：${modal.listing.active.name}；请在新 Claude 会话中使用。`, 'accent'));
   }
   const available = Math.max(0, h - 2);
-  const result = [line(title, 'accent'), ...getVisibleWindow(body, focus, available).items];
+  const visible = available ? getVisibleWindow(body, focus, available).items : [];
+  const result = [line(title, 'accent')];
+  for (let index = 0; index < available; index++) {
+    const left = visible[index] || bodyLine('');
+    if (!preview?.rightWidth) result.push(left);
+    else {
+      const right = preview.lines[index] || line('', 'normal', preview.rightWidth);
+      const segments = [left, { text: '│', tone: 'dim' }, right];
+      result.push({ text: segments.map(segment => segment.text).join(''), tone: 'normal', segments });
+    }
+  }
   while (result.length < h - 1) result.push(line(''));
   if (h > 1) result.push(line(footer, 'dim'));
   return result.slice(0, h);

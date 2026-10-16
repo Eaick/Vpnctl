@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import stringWidth from 'string-width';
-import { createClaudeProviderEditor, readClaudeProviderInput, buildClaudeProviderLines } from '../src/lib/claude-management.mjs';
+import { createClaudeProviderEditor, readClaudeProviderInput, buildClaudeProviderLines, createClaudeProviderPreview, getClaudeProviderPreviewLayout } from '../src/lib/claude-management.mjs';
 import { buildIntegrationModalLines } from '../src/lib/cli-management.mjs';
 
 test('Claude provider form contains essential sections and never preloads a saved credential', () => {
@@ -24,6 +24,16 @@ test('Claude accounts view exposes supported state without claiming OpenAI conve
   assert.match(lines.map(line => line.text).join('\n'), /未接通|不可激活/);
   const empty = buildClaudeProviderLines({ type: 'claude-providers', selected: 0, listing: { profiles: [] } }, 76, 10);
   assert.match(empty.map(line => line.text).join('\n'), /新增/);
+});
+
+test('existing Claude settings are visible even with no saved accounts and provide an import shortcut', () => {
+  const lines = buildClaudeProviderLines({ type: 'claude-providers', selected: 0, listing: { profiles: [], existing: {
+    status: 'available', label: '发现已有 Claude API 配置，按 i 预览导入。', profile: { baseUrl: 'https://existing.example.com', model: 'existing-model', hasSecret: true }
+  } } }, 76, 14);
+  const text = lines.map(line => line.text).join('\n');
+  assert.match(text, /已有 Claude API 配置/);
+  assert.match(text, /existing\.example\.com/);
+  assert.match(text, /i读取配置/);
 });
 
 test('each mapped Claude model has an independent opt-in 1M suffix with an idempotent edit roundtrip', () => {
@@ -52,4 +62,52 @@ test('1M confirmation stays cancel-first and clearly requires support acknowledg
     assert.match(lines.at(-1).text, /确认支持1M并执行/);
     assert.ok(lines.at(-1).text.includes(confirmSelected ? '[确认支持1M并执行]' : '[取消]'));
   }
+});
+
+test('Claude account JSON preview maps API fields without revealing credentials or unrelated properties', () => {
+  const profile = { protocol: 'anthropic', baseUrl: 'https://preview.example.com', authType: 'api-key', secret: 'fixture-preview-secret',
+    hasSecret: true, model: 'main[1m]', sonnet: 'fast', effort: 'high', unexpectedToken: 'fixture-other-secret' };
+  const preview = createClaudeProviderPreview(profile);
+  assert.equal(preview.env.ANTHROPIC_BASE_URL, profile.baseUrl);
+  assert.equal(preview.env.ANTHROPIC_API_KEY, '[已隐藏]');
+  assert.equal(preview.env.ANTHROPIC_MODEL, 'main[1m]');
+  assert.equal(preview.env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'fast');
+  assert.equal(preview.env.CLAUDE_CODE_EFFORT_LEVEL, 'high');
+  assert.ok(!JSON.stringify(preview).includes('fixture-preview-secret'));
+  assert.ok(!JSON.stringify(preview).includes('fixture-other-secret'));
+  assert.equal(createClaudeProviderPreview(null), null);
+  const unsupported = createClaudeProviderPreview({ ...profile, protocol: 'openai-chat' });
+  assert.equal(unsupported.protocol, 'openai-chat');
+  assert.equal(unsupported.env, undefined, 'unfinished conversion must not pretend to be an applicable Claude config');
+});
+
+test('Claude account viewer uses a 55/45 split and highlights only the selected left row', () => {
+  const profiles = [{ id: 'one', name: '第一个账号', protocol: 'anthropic', baseUrl: 'https://first.example.com', model: 'first-model', hasSecret: true },
+    { id: 'two', name: '第二个账号', protocol: 'anthropic', baseUrl: 'https://second.example.com', model: 'second-model', hasSecret: true }];
+  for (const width of [20, 40, 76, 96, 136]) for (const height of [3, 8, 24]) {
+    const modal = { type: 'claude-providers', selected: 1, listing: { profiles } };
+    const layout = getClaudeProviderPreviewLayout(modal, width, height);
+    assert.equal(layout.leftWidth, Math.floor((width - 1) * 0.55));
+    assert.equal(layout.leftWidth + 1 + layout.rightWidth, width);
+    const lines = buildClaudeProviderLines(modal, width, height);
+    assert.equal(lines.length, height);
+    assert.ok(lines.every(line => stringWidth(line.text) <= width));
+    for (const line of lines.filter(line => line.segments)) {
+      assert.equal(line.segments.map(segment => segment.text).join(''), line.text);
+      assert.ok(line.segments.slice(1).every(segment => segment.tone !== 'selected'));
+    }
+  }
+  const modal = { type: 'claude-providers', selected: 1, listing: { profiles } };
+  const layout = getClaudeProviderPreviewLayout(modal, 96, 10);
+  const text = buildClaudeProviderLines({ ...modal, previewScroll: layout.maxScroll }, 96, 10).flatMap(line => line.segments?.slice(2).map(segment => segment.text) || []).join('');
+  assert.ok(text.includes('second-model'));
+  assert.ok(!text.includes('first-model'));
+});
+
+test('empty account JSON preview says 无阅览 even when an unimported existing configuration was discovered', () => {
+  const modal = { type: 'claude-providers', selected: 0, listing: { profiles: [], existing: { status: 'available', label: '发现已有配置', profile: { model: 'not-imported' } } } };
+  const lines = buildClaudeProviderLines(modal, 76, 12);
+  const right = lines.flatMap(line => line.segments?.slice(2).map(segment => segment.text) || []).join('\n');
+  assert.match(right, /无阅览/);
+  assert.ok(!right.includes('not-imported'));
 });

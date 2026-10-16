@@ -88,6 +88,7 @@ const TUI_HELP_SECTIONS = [
       '5h / weekly 按实际时长显示剩余进度及重置时间，未提供不等于 0；仅展示可用重置次数，不兑换',
       'Claude：API 账号管理支持 a 新增、e 编辑、x 删除、Enter 应用、b 恢复；写操作需确认',
       '账号表单：Tab/上下切字段，左右切选项，Ctrl+U 清空；密钥不回显，编辑留空保留',
+      '每个 Claude 模型可独立声明 1M；追加 [1m] 前须确认上游支持，不自动验证容量',
       '原生 Anthropic 账号可激活；OpenAI Chat/Responses 转换未接通，只能保存',
       'Claude：同步代理后，已运行 Supervisor 的环境仍未验证'
     ]

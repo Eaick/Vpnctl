@@ -1,6 +1,6 @@
 # VPNCTL
 
-[![Version](https://img.shields.io/badge/VPNCTL-0.1.1-0f766e)](https://github.com/Eaick/Vpnctl)
+[![Version](https://img.shields.io/badge/VPNCTL-0.2.0-0f766e)](https://github.com/Eaick/Vpnctl)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![mihomo](https://img.shields.io/badge/runtime-mihomo-0f766e)](https://github.com/MetaCubeX/mihomo)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -17,13 +17,19 @@
 
 ## 最新动态
 
+**2026-10-16 · VPNCTL 0.2.0**
+
+- Claude 模型新增独立的 1M 上下文声明开关，默认关闭；保存与应用前须确认模型及服务商支持，自动追加或移除 `[1m]`，不重复追加。
+- 移除冗余的“安装与升级”独立页面，导航精简为 10 页；保留原有初始化与迁移命令。
+- 保留确认式 Codex Daemon 代理修复和 Claude 原生 API 账号管理，补充 1M 声明、旧配置兼容及实际 TUI 交互回归测试。
+
 **2026-10-16 · CLI 管理维护更新（VPNCTL 0.1.1）**
 
 - 新增 Codex / Claude Code 双标签 CLI 管理，诊断报告与选项使用分割线分区。
 - Codex Daemon 修复确认后实际执行：按需停止、对齐 CLI 版本、携带 VPNCTL 当前 HTTP 代理环境启动并复查；版本一致但代理环境不同也可修复，不会自动中断任务。
 - 支持 Codex 账号与额度的手动只读查询；无法验证的数据明确标注，不将网络连通等同于登录成功。
 - Claude 新增原生 Anthropic API 账号的增删改查、切换和模型映射，保留动态终端代理及安全配置恢复。
-- OpenAI Chat / Responses 配置目前只能保存，转换服务尚未接通，不能激活；未提供 1M 上下文声明开关。
+- OpenAI Chat / Responses 配置目前只能保存，转换服务尚未接通，不能激活。
 
 **2026-10-09 · VPNCTL 0.1.1**
 
@@ -35,19 +41,18 @@
 
 > 流量提示来自最近同步的订阅节点文字，不是实时余额。本版尚未解析 `subscription-userinfo` 响应头；若机场只通过响应头提供流量信息，则不会显示额度。
 
-**2026-10-07 · VPNCTL 0.1 维护更新**
+> **已安装用户：** 根据安装方式选择 [Git 克隆更新](#git-克隆安装更新) 或 [ZIP 下载更新](#zip-下载安装更新)。本次更新无需重新初始化。
 
-- 修复部分机场根据客户端类型返回不同节点配置，导致 VPNCTL 测速显示 `ERR` 的兼容问题。
-- 订阅同步使用 `clash.meta` 请求头，优先获取机场提供的 Mihomo 原生配置。
-- 整组测速完成后显示首个失败节点的具体原因，便于排查超时和配置问题。
+## 下个版本计划
 
-> **已安装用户：** 根据安装方式选择 [Git 克隆更新](#git-克隆安装更新) 或 [ZIP 下载更新](#zip-下载安装更新)。更新后，在订阅页按 `y` 重新同步，再按 `d` 测速。
+- 计划解析订阅响应中的 `subscription-userinfo` HTTP 响应头，读取服务商提供的流量用量、总量和到期时间等元数据，补充节点文字之外的订阅信息来源。
+- **VPNCTL 0.2.0 尚未实现此能力。** 当前仍仅从可识别的订阅节点文字提取提示；缺失数据不会按零处理或凭空推算。
 
 ## 项目简介
 
 **VPNCTL 是面向 Linux 服务器和 SSH 会话的 Mihomo 终端管理器。** 不依赖桌面环境，在中文 TUI 中管理订阅、选择节点、测速、配置端口，并让当前账户的终端应用使用代理。
 
-VPNCTL 当前版本：**0.1.1**，可执行 `vpnctl --version` 查看；这不是 npm 工具或 Mihomo 内核的版本。它不是全系统透明代理，不自动接管其他用户或其他进程的网络。
+VPNCTL 当前版本：**0.2.0**，可执行 `vpnctl --version` 查看；这不是 npm 工具或 Mihomo 内核的版本。它不是全系统透明代理，不自动接管其他用户或其他进程的网络。
 
 ## 导航
 
@@ -177,7 +182,7 @@ bash scripts/vpnctl.sh install
 
 ### 更新后操作
 
-运行 `vpnctl --version` 确认显示 `VPNCTL 0.1.1`，再启动 `vpnctl`。节点页布局更新无需重新初始化；从订阅兼容性修复前的旧版本升级时，在订阅页激活要使用的订阅，按 `y` 重新同步，再进入节点页按 `d` 测速，以替换旧订阅缓存。
+运行 `vpnctl --version` 确认显示 `VPNCTL 0.2.0`，再启动 `vpnctl`。节点页布局更新无需重新初始化；从订阅兼容性修复前的旧版本升级时，在订阅页激活要使用的订阅，按 `y` 重新同步，再进入节点页按 `d` 测速，以替换旧订阅缓存。
 
 若 npm 报错连接已关闭的本地代理端口，在当前终端执行 `vpnoff`。npm 自己保存的代理还需检查 `npm config get proxy` 和 `npm config get https-proxy`；Mihomo 正在运行且下载需要代理时，可执行 `vpnon` 获取当前有效端口。
 
@@ -346,8 +351,11 @@ Daemon 可能保留旧代理或旧版本，版本不一致也不代表它是所�
 | API Key / Bearer Token、认证字段 | 按服务商选择 `ANTHROPIC_API_KEY` 或 `ANTHROPIC_AUTH_TOKEN`；密钥不回显，编辑时留空保留 |
 | 上游格式 | Anthropic Messages 原生格式可应用；OpenAI Chat / Responses 目前仅可保存，转换服务未接通，禁止激活 |
 | 默认模型、Sonnet / Opus / Haiku / Subagent | 填写服务商实际模型 ID；可选映射留空时不覆盖 |
+| 每个模型的“声明 1M” | 默认关闭；开启后自动追加一个 `[1m]` 后缀，关闭后移除该后缀；必须填写具体模型 ID |
 
 账号列表按 `a` 新增、`e` 编辑、`x` 删除、`Enter` 应用所选账号、`b` 恢复原 API 配置。写操作先展示预览，默认取消；按 `Tab` 选择确认再按 `Enter`。表单按 `Tab` / 上下键选择字段，左右键切换选项，`Ctrl+U` 清空当前字段。
+
+1M 声明按模型分别设置，例如 `gateway/model-name` 开启后写成 `gateway/model-name[1m]`。保存或应用含声明的账号时，必须选择“确认支持1M并执行”；这表示用户已自行确认模型及服务商支持该上下文，VPNCTL 不发长请求验证容量或费用，也不会把不支持的模型变成 1M 模型。重新编辑不会重复追加后缀，关闭声明后需保存并重新应用账号。已有 `CLAUDE_CODE_DISABLE_1M_CONTEXT` 设置不会被覆盖。后缀依据：[Claude Code 模型配置说明](https://code.claude.com/docs/en/model-config#pin-models-for-third-party-deployments)。
 
 “账号”仅指 API 地址和凭据配置，不切换浏览器登录。保存不会自动激活，也不会发送模型请求或验证额度。应用会备份并更新当前用户的 Claude API 与模型字段；已运行会话不会强制重启，请重新启动 Claude。原生格式仍需由服务商支持实际模型和工具调用，不能仅凭保存成功判断可用。
 

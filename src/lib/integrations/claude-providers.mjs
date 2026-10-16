@@ -15,6 +15,10 @@ const clean = (value, label, max = 256) => {
   if (typeof value !== 'string' || value.length > max || /[\x00-\x1f\x7f]/.test(value)) fail(`${label}格式无效`);
   return value.trim();
 };
+const modelsWith1m = profile => Object.keys(models).filter(key => key !== 'effort' && /\[1m\]$/i.test(profile[key] || '')).map(key => `${key}: ${profile[key]}`);
+const require1mAcknowledgement = (profiles, acknowledged) => {
+  if (acknowledged !== true && profiles.some(profile => modelsWith1m(profile).length)) fail('请明确确认模型及服务商支持 1M 上下文，未修改配置');
+};
 
 export function normalizeClaudeProvider(input, previous, id = previous?.id || randomUUID()) {
   if (!object(input)) fail('账号配置格式无效');
@@ -122,15 +126,18 @@ export async function prepareClaudeProviderAction(action, { env = process.env, i
   const profile = loaded.value.profiles.find(profile => profile.id === id || profile.id === input?.id);
   const plan = { action, id: id || input?.id || randomUUID(), allowed: true, settingsPath: loaded.where.settingsPath,
     storeDigest: loaded.snapshot.digest, settingsDigest: settings.digest, steps: [], warnings: ['只管理 API 账号字段；不会删除登录凭据、MCP、hooks 或其他用户设置。', '已运行 Claude 会话需重新加载配置或重启；不强制中断任务。'] };
+  let declarations = [];
   if (action === 'save') {
     if (input?.id && !profile) fail('账号不存在，请重新载入');
     const next = normalizeClaudeProvider(input, profile, plan.id);
+    declarations = modelsWith1m(next);
     if (loaded.value.profiles.some(item => item.id !== next.id && item.name === next.name)) fail('账号名称已存在');
     plan.payloadDigest = digest(encode(next)); plan.profile = publicProfile(next);
     plan.steps.push({ label: `保存账号 ${next.name}；凭据仅写入当前用户的 0600 私有文件，尚不激活` });
   } else if (action === 'apply') {
     if (!profile) fail('请先选择账号');
     plan.profile = publicProfile(profile); plan.payloadDigest = digest(encode(profile));
+    declarations = modelsWith1m(profile);
     if (!context?.available) { plan.allowed = false; plan.warnings.push('请先启动本账户 VPNCTL 代理，未应用账号'); }
     plan.steps.push({ label: `应用 ${profile.name}（${profile.protocol}）并备份 settings.json` });
     if (profile.protocol !== 'anthropic') {
@@ -149,11 +156,20 @@ export async function prepareClaudeProviderAction(action, { env = process.env, i
     const snapshot = await readPrivateSnapshot(path.resolve(file), fs);
     if (!snapshot.exists || snapshot.text.length > 1048576) fail('导入文件不存在或过大');
     const profiles = parseLegacyAccounts(snapshot.text).map(value => normalizeClaudeProvider(value));
+    declarations = profiles.flatMap(modelsWith1m);
     const names = new Set(loaded.value.profiles.map(profile => profile.name));
     for (const item of profiles) { if (names.has(item.name)) fail('导入账号名称重复，请先更名'); names.add(item.name); }
     plan.file = path.resolve(file); plan.fileDigest = snapshot.digest; plan.names = profiles.map(profile => profile.name);
     plan.steps.push({ label: `将 ${profiles.length} 套旧账号导入私有存储，不执行文件、不修改 bashrc、不自动激活` });
   } else fail('不支持的账号操作');
+  plan.requires1mConfirmation = declarations.length > 0;
+  if (plan.requires1mConfirmation) {
+    plan.steps.unshift({ label: `声明 1M 上下文：${declarations.slice(0, 8).join('；')}${declarations.length > 8 ? `；共 ${declarations.length} 项` : ''}` });
+    plan.warnings.unshift('必须确认所选模型及服务商确实支持 1M 上下文；[1m] 仅为声明，不代表 VPNCTL 已验证容量或费用。');
+    if (settings.value.env?.CLAUDE_CODE_DISABLE_1M_CONTEXT === '1' || env.CLAUDE_CODE_DISABLE_1M_CONTEXT === '1') {
+      plan.warnings.push('检测到 CLAUDE_CODE_DISABLE_1M_CONTEXT=1，可能覆盖 1M 声明；保持用户原设置不变。');
+    }
+  }
   return plan;
 }
 
@@ -174,9 +190,10 @@ async function commit(loaded, settings, next, nextSettings) {
   return backup;
 }
 
-export async function executeClaudeProviderAction(plan, { env = process.env, input, context, confirmed = false } = {}) {
+export async function executeClaudeProviderAction(plan, { env = process.env, input, context, confirmed = false, acknowledge1m = false } = {}) {
   if (!confirmed) fail('需要明确确认后才能修改 API 账号');
   if (!plan.allowed) fail('当前不满足执行条件，请重新预览');
+  if (plan.requires1mConfirmation && acknowledge1m !== true) fail('请明确确认模型及服务商支持 1M 上下文，未修改配置');
   if (plan.action === 'apply') {
     if (!context?.available) fail('当前 VPNCTL 代理不可用，未应用账号');
     if (plan.profile.protocol !== 'anthropic') fail('OpenAI 协议转换尚未接通，未应用账号');
@@ -192,6 +209,7 @@ export async function executeClaudeProviderAction(plan, { env = process.env, inp
       const index = next.profiles.findIndex(profile => profile.id === plan.id);
       const profile = normalizeClaudeProvider(input, next.profiles[index], plan.id);
       if (digest(encode(profile)) !== plan.payloadDigest) fail('输入已改变，请重新预览');
+      require1mAcknowledgement([profile], acknowledge1m);
       if (next.profiles.some(item => item.id !== profile.id && item.name === profile.name)) fail('账号名称已存在');
       if (index >= 0) next.profiles[index] = profile; else next.profiles.push(profile);
     } else if (plan.action === 'delete') {
@@ -201,10 +219,13 @@ export async function executeClaudeProviderAction(plan, { env = process.env, inp
     else if (plan.action === 'import') {
       const imported = await readPrivateSnapshot(plan.file, fs);
       if (imported.digest !== plan.fileDigest) fail('导入文件已改变，请重新预览');
-      next.profiles.push(...parseLegacyAccounts(imported.text).map(value => normalizeClaudeProvider(value)));
+      const profiles = parseLegacyAccounts(imported.text).map(value => normalizeClaudeProvider(value));
+      require1mAcknowledgement(profiles, acknowledge1m);
+      next.profiles.push(...profiles);
     } else if (plan.action === 'apply') {
       const profile = next.profiles.find(profile => profile.id === plan.id);
       if (!profile || digest(encode(profile)) !== plan.payloadDigest) fail('账号已变化，请重新预览');
+      require1mAcknowledgement([profile], acknowledge1m);
       if (profile.protocol !== 'anthropic') fail('OpenAI 协议转换尚未接通，未应用账号');
       const target = targetFor(profile);
       nextSettings = structuredClone(settings.value); nextSettings.env ||= {};

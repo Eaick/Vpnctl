@@ -52,9 +52,6 @@ const SECTIONS = [{
   id: 'appearance',
   label: '主题与外观'
 }, {
-  id: 'install',
-  label: '安装与升级'
-}, {
   id: 'cli',
   label: 'CLI 管理'
 }, {
@@ -553,6 +550,7 @@ export default function App({ initialSection = 'overview', initialCliApp = 'code
     const prepared = { app: 'claude', action: 'provider', plan };
     updateState(next => {
       next.modal = { type: 'cli-confirm', prepared, providerInput: options.input, providerFlow: true,
+        ...(plan.requires1mConfirmation ? { confirmationLabel: '确认支持1M并执行' } : {}),
         lines: formatActionPreview(prepared, { confirmation: true }).split('\n'), confirmSelected: false, scroll: 0 };
     });
   };
@@ -574,6 +572,7 @@ export default function App({ initialSection = 'overview', initialCliApp = 'code
             ? await uninstallShellIntegration({})
             : modal.prepared.action === 'provider'
               ? await executeClaudeProviderAction(modal.prepared.plan, { input: modal.providerInput, confirmed: true,
+                acknowledge1m: modal.prepared.plan.requires1mConfirmation === true && modal.confirmSelected,
                 ...(modal.prepared.plan.action === 'apply' ? { context: await resolveApplicationProxy() } : {}) })
               : await executeIntegrationAction(modal.prepared, { confirmed: true, acknowledgeActive: true, acknowledgeConflicts: true, onProgress: progress });
         progress(result.message || (modal.prepared.action === 'install' ? '终端包装已更新，请在新终端使用。' : '操作结束，请检查诊断中的未验证项目。'));
@@ -1094,22 +1093,6 @@ export default function App({ initialSection = 'overview', initialCliApp = 'code
         });
         return;
       }
-      if (state.sectionId === 'install') {
-        if (!state.snapshot.status.initialized) {
-          updateState(next => {
-            next.modal = createInitModal(next.snapshot);
-          });
-        } else if (state.snapshot.status.oldInstallDetected) {
-          await withBusy(async () => {
-            await migrateOldInstall({
-              mode: createConfig().mode,
-              skipDownload: process.env.VPNCTL_SKIP_DOWNLOAD === '1'
-            });
-            await refreshState();
-          }, '旧版迁移已完成');
-        }
-        return;
-      }
       if (state.sectionId === 'subscriptions') {
         const subscription = subscriptions.find(item => item.id === state.selectedSubscriptionId);
         if (!subscription) return;
@@ -1415,7 +1398,6 @@ export default function App({ initialSection = 'overview', initialCliApp = 'code
     runtime: ['运行状态', `接口：${state.snapshot.status.apiAlive ? '在线' : '离线'}`, `进程 PID：${state.snapshot.status.pid || '无'}`, `当前节点：${state.snapshot.currentNodeLabel || '无'}`, `运行锁数量：${(state.snapshot.status.runtimeLocks || []).length}`, `日志文件：${state.snapshot.status.logFile}`, '', '动作：s 启动 | k 停止 | r 刷新 | l 显示日志路径'],
     ports: ['端口与环境', `代理模式：${state.snapshot.status.proxyMode}`, ...getProxyEndpointSummary(state.snapshot.status), getPortSummary(state.snapshot.status), `端口来源：${state.snapshot.status.portSource}`, '', '动作：p 修改代理模式与端口'],
     latency: ['测速目标', `当前目标：${selectedLatencyTarget.label}`, `测速 URL：${selectedLatencyTarget.url}`, `${selectedLatencyTarget.description}`, '', '说明：节点延迟结果取决于这里选择的测速目标。', '动作：上下选择目标 | Enter 应用 | 前往节点页按 d 测速'],
-    install: ['安装与升级', `运行模式：${state.snapshot.status.mode}`, `默认代理模式：${state.snapshot.status.proxyMode}`, `检测到旧版安装：${state.snapshot.status.oldInstallDetected ? '是' : '否'}`, `迁移状态：${state.snapshot.status.migration.migrationStatus}`, `迁移来源：${state.snapshot.status.migration.sourcePath || '无'}`, '', '动作：i 初始化 | u 迁移旧版'],
     shell: ['Shell 集成', `已安装：${state.snapshot.status.shellIntegration?.installed ? '是' : '否'}`, `bashrc 路径：${state.snapshot.status.shellIntegration?.bashrcPath || '无'}`, `Codex 封装：${state.snapshot.status.shellIntegration?.codexWrapper ? '已启用' : '未启用'}`, `Claude 封装：${state.snapshot.status.shellIntegration?.claudeWrapper ? '已启用' : '未启用'}`, `同账号复用：${formatSessionReuseState(state.snapshot.status.sessionReuse?.state)}`, `${state.snapshot.status.sessionReuse?.label || '建议在服务器安装 bash Shell 集成，以复用同账号会话的 VPN。'}`, '', 'CLI 管理：双标签诊断、确认式 Daemon 修复及 Claude 代理同步。', '已有后台进程不会自动继承新端口，也不会被自动重启。', '', ...shellGuide, '', '动作：Enter 或 b 安装 bashrc 配置块 | n 确认卸载 bashrc 配置块'],
     logs: ['日志与诊断', `日志文件：${state.snapshot.status.logFile}`, `主题：${state.snapshot.status.theme}`, `代理模式：${state.snapshot.status.proxyMode}`, `端口来源：${state.snapshot.status.portSource}`, `迁移状态：${state.snapshot.status.migration.migrationStatus}`, '', '动作：r 刷新 | l 显示日志路径']
   };

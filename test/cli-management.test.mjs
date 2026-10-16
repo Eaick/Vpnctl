@@ -157,6 +157,8 @@ test('actual CLI page switches apps, opens a cancel-first preview and fits commo
       const key = async (value) => { stdin.write(value); await new Promise((resolve) => setTimeout(resolve, 50)); };
       try {
         await waitFor(() => frame().includes('CLI 管理'));
+        assert.ok(!frame().includes('安装与升级'));
+        assert.ok(frame().includes('页面 (10)'));
         await key('\t');
         await waitFor(() => frame().includes('[1 Codex]'));
         for (let i = 0; i < getCliActions('codex').findIndex(action => action.id === 'repair'); i++) await key('\x1b[B');
@@ -187,12 +189,16 @@ test('actual CLI page switches apps, opens a cancel-first preview and fits commo
         assert.ok(!frame().includes('ui-fixture-secret'));
         await key('\t'); await key('\t'); await key('\x1b[C');
         await key('\t'); await key('fixture-model');
+        await key('\t'); await key('\x1b[C');
         await key('\r');
         await waitFor(() => frame().includes('确认应用集成操作'));
         assert.ok(frame().includes('[取消]'));
+        assert.ok(frame().includes('确认支持1M并执行'));
         assert.ok(!frame().includes('ui-fixture-secret'));
         await key('\t'); await key('\r');
         await waitFor(() => frame().includes('操作结束'));
+        const accounts = JSON.parse(await fs.readFile(path.join(temp, 'claude', '.vpnctl-providers.json'), 'utf8'));
+        assert.equal(accounts.profiles.find(profile => profile.name === `测试账号${width}`).model, 'fixture-model[1m]');
         await key('\x1b');
         await waitFor(() => frame().includes('API 账号管理'));
         assert.ok(frame().includes(`测试账号${width}`));

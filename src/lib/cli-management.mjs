@@ -165,7 +165,8 @@ export function buildIntegrationModalLines(modal, width, height) {
   const safeWidth = Math.max(1, width), safeHeight = Math.max(1, height);
   const confirm = modal.type === 'cli-confirm';
   const title = confirm ? '确认应用集成操作' : modal.error ? '应用集成失败' : '应用集成执行进度';
-  const footer = confirm ? `${modal.confirmSelected ? '取消   [确认执行]' : '[取消]   确认执行'} · Tab/左右切换 · Enter 确认 · Esc 取消`
+  const confirmationLabel = modal.confirmationLabel || '确认执行';
+  const footer = confirm ? `${modal.confirmSelected ? `取消   [${confirmationLabel}]` : `[取消]   ${confirmationLabel}`} · Tab/左右切换 · Enter 确认 · Esc 取消`
     : modal.done || modal.error ? '操作结束 · Esc 返回 · PgUp/PgDn 查看结果' : '正在执行，请等待当前步骤结束';
   const body = wrapLines([...(modal.lines || []), ...(modal.error ? [`失败：${modal.error}`, '未清除账号凭据或历史会话；请重新诊断后决定是否重试。'] : [])].map(text => ({ text })), safeWidth);
   const start = Math.min(Math.max(0, modal.scroll || 0), Math.max(0, body.length - Math.max(0, safeHeight - 2)));

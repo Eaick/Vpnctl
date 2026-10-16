@@ -2,6 +2,20 @@ import { getVisibleWindow, padText } from './tui-layout.mjs';
 
 export const CLAUDE_PROTOCOL_LABELS = { anthropic: 'Anthropic Messages（原生）', 'openai-chat': 'OpenAI Chat（转换未接通）', 'openai-responses': 'OpenAI Responses（转换未接通）' };
 const field = (key, label, value, extra = {}) => ({ key, label, value: value || '', ...extra });
+const modelRoles = [['model', '默认实际模型'], ['sonnet', 'Sonnet → 实际模型'], ['opus', 'Opus → 实际模型'], ['haiku', 'Haiku → 实际模型'], ['subagent', 'Subagent → 实际模型']];
+const contextSuffix = /(?:\[1m\])+$/i;
+
+function modelFields(profile) {
+  return modelRoles.flatMap(([key, label], index) => {
+    const value = profile[key] || '';
+    return [field(key, label, value.replace(contextSuffix, ''), {
+      ...(index === 0 ? { group: '模型映射' } : {}), hint: '填写实际模型 ID；留空不覆盖。1M 声明在下一项独立选择。'
+    }), field(`${key}1m`, `${label.split(' →')[0]} · 声明 1M`, contextSuffix.test(value) ? 'on' : 'off', {
+      options: ['off', 'on'], labels: { off: '关闭（不追加后缀）', on: '开启 [1m]（保存前需确认支持）' },
+      hint: '须自行确认模型及服务商支持 1M；VPNCTL 不验证容量，也不会扩展模型能力。'
+    })];
+  });
+}
 
 export function createClaudeProviderEditor(profile = {}) {
   return { type: 'claude-editor', id: profile.id, activeField: 0, fields: [
@@ -10,18 +24,21 @@ export function createClaudeProviderEditor(profile = {}) {
     field('secret', 'API Key / Bearer Token *', '', { secret: true, hint: profile.id ? '留空保留原密钥；密钥不会回显' : '密钥不会回显；仅写入本账户私有配置文件' }),
     field('protocol', '上游格式', profile.protocol || 'anthropic', { group: '协议与认证', options: Object.keys(CLAUDE_PROTOCOL_LABELS), labels: CLAUDE_PROTOCOL_LABELS, hint: '原生可激活；OpenAI 格式目前只能保存，不能激活' }),
     field('authType', '认证字段', profile.authType || 'bearer', { options: ['bearer', 'api-key'], labels: { bearer: 'ANTHROPIC_AUTH_TOKEN（Bearer）', 'api-key': 'ANTHROPIC_API_KEY（x-api-key）' }, hint: '按 API 服务商要求选择；OpenAI 格式仅支持 Bearer' }),
-    field('model', '默认实际模型', profile.model, { group: '模型映射', hint: '填写服务商实际模型 ID；原生留空沿用 Claude 默认值' }),
-    field('sonnet', 'Sonnet → 实际模型', profile.sonnet),
-    field('opus', 'Opus → 实际模型', profile.opus),
-    field('haiku', 'Haiku → 实际模型', profile.haiku),
-    field('subagent', 'Subagent → 实际模型', profile.subagent, { hint: '映射留空表示不覆盖；不声明未经验证的上下文长度' }),
+    ...modelFields(profile),
     field('effort', '思考强度', profile.effort, { group: '可选参数', options: ['', 'low', 'medium', 'high', 'max'], hint: '仅在上游模型支持时设置，默认不覆盖' }),
     field('tokenField', 'OpenAI 输出长度字段', profile.tokenField || 'max_tokens', { options: ['max_tokens', 'max_completion_tokens'], hint: '仅影响未来 OpenAI Chat 转换；原生忽略' })
   ] };
 }
 
 export function readClaudeProviderInput(modal) {
-  return { ...(modal.id ? { id: modal.id } : {}), ...Object.fromEntries(modal.fields.map(item => [item.key, item.value])) };
+  const input = { ...(modal.id ? { id: modal.id } : {}), ...Object.fromEntries(modal.fields.map(item => [item.key, item.value])) };
+  for (const [key, label] of modelRoles) {
+    const base = input[key].trim().replace(contextSuffix, '');
+    if (input[`${key}1m`] === 'on' && !base) throw new Error(`请先填写${label}的模型 ID，再声明 1M 上下文`);
+    input[key] = base && input[`${key}1m`] === 'on' ? `${base}[1m]` : base;
+    delete input[`${key}1m`];
+  }
+  return input;
 }
 
 export function buildClaudeProviderLines(modal, width, height) {

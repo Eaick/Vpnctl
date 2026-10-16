@@ -103,3 +103,33 @@ test('public listing whitelists fields and invalid endpoints or duplicate normal
   await fs.writeFile(storePath, JSON.stringify(store));
   assert.ok(!JSON.stringify(await listClaudeProviders({ env })).includes('unexpected-fixture-secret'));
 }));
+
+test('1M model declarations require explicit support acknowledgement before save and apply', async () => fixture(async ({ env, dir }) => {
+  const input = { ...account, model: 'gateway/main[1m]', sonnet: 'gateway/fast[1m]', opus: 'ordinary-model' };
+  const save = await prepareClaudeProviderAction('save', { env, input });
+  assert.equal(save.requires1mConfirmation, true);
+  assert.match(save.warnings.join('\n'), /确认.*支持.*1M/);
+  await assert.rejects(executeClaudeProviderAction(save, { env, input, confirmed: true }), /确认.*1M/);
+  await assert.rejects(fs.access(path.join(dir, '.vpnctl-providers.json')));
+  const saved = await executeClaudeProviderAction(save, { env, input, confirmed: true, acknowledge1m: true });
+  const context = { available: true };
+  const apply = await prepareClaudeProviderAction('apply', { env, id: saved.id, context });
+  assert.equal(apply.requires1mConfirmation, true);
+  await assert.rejects(executeClaudeProviderAction(apply, { env, context, confirmed: true }), /确认.*1M/);
+  await executeClaudeProviderAction(apply, { env, context, confirmed: true, acknowledge1m: true });
+  const written = JSON.parse(await fs.readFile(path.join(dir, 'settings.json'), 'utf8'));
+  assert.equal(written.env.ANTHROPIC_MODEL, 'gateway/main[1m]');
+  assert.equal(written.env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'gateway/fast[1m]');
+  assert.equal(written.env.ANTHROPIC_DEFAULT_OPUS_MODEL, 'ordinary-model');
+  assert.equal((await listClaudeProviders({ env })).active.model, 'gateway/main[1m]');
+  const changed = { ...input, id: saved.id, secret: '', model: 'gateway/main', sonnet: 'gateway/fast' };
+  const disable = await prepareClaudeProviderAction('save', { env, input: changed });
+  assert.equal(disable.requires1mConfirmation, false);
+  await executeClaudeProviderAction(disable, { env, input: changed, confirmed: true });
+  assert.equal((await listClaudeProviders({ env })).profiles[0].pending, true);
+  const applyDisabled = await prepareClaudeProviderAction('apply', { env, id: saved.id, context });
+  await executeClaudeProviderAction(applyDisabled, { env, context, confirmed: true });
+  const disabled = JSON.parse(await fs.readFile(path.join(dir, 'settings.json'), 'utf8'));
+  assert.equal(disabled.env.ANTHROPIC_MODEL, 'gateway/main');
+  assert.equal(disabled.env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'gateway/fast');
+}));

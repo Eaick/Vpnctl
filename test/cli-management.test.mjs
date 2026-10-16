@@ -156,6 +156,13 @@ test('actual CLI page switches apps, opens a cancel-first preview and fits commo
         assert.ok(predicate(), `UI state not reached at ${width} columns`);
       };
       const key = async (value) => { stdin.write(value); await new Promise((resolve) => setTimeout(resolve, 50)); };
+      const assertAccountColumns = columns => {
+        const previewRow = frame().split('\n').find(line => line.includes('JSON 预览'));
+        const columnsOfRow = previewRow.split('│');
+        assert.equal(columnsOfRow.length, 4, 'both pane contents must stay inside the panel borders');
+        assert.equal(stringWidth(columnsOfRow[1]), 1 + Math.floor((columns - 5) * 0.55));
+        assert.equal(stringWidth(previewRow), columns);
+      };
       try {
         await waitFor(() => frame().includes('CLI 管理'));
         assert.ok(!frame().includes('安装与升级'));
@@ -180,10 +187,24 @@ test('actual CLI page switches apps, opens a cancel-first preview and fits commo
         await key('\r');
         await waitFor(() => frame().includes('[2 Claude Code]'));
         assert.ok(!await fs.stat(path.join(temp, 'claude', 'settings.json')).then(() => true, () => false));
+        await fs.mkdir(path.join(temp, 'claude'), { recursive: true });
+        await fs.writeFile(path.join(temp, 'claude', 'settings.json'), '{}');
         await key('\x1b[B'); await key('\r');
         await waitFor(() => frame().includes('API 账号管理'));
         assert.ok(frame().includes('JSON 预览'));
         assert.ok(frame().includes('无阅览'));
+        assertAccountColumns(width);
+        const wrappedMessage = frame().split('\n').filter(line => line.split('│').length === 4).map(line => line.split('│')[1].trim()).join('');
+        assert.ok(wrappedMessage.includes('apiKeyHelper。'), 'the message ending must survive real terminal rendering');
+        stdout.columns = width - 10;
+        stdout.emit('resize');
+        await waitFor(() => frame().trimEnd().split('\n').every(line => stringWidth(line) <= stdout.columns));
+        assert.ok(frame().includes('无阅览'));
+        assertAccountColumns(width - 10);
+        stdout.columns = width;
+        stdout.emit('resize');
+        await waitFor(() => frame().split('\n').some(line => stringWidth(line) === width));
+        assertAccountColumns(width);
         await key('a');
         await waitFor(() => frame().includes('供应商名称'));
         await key(`测试账号${width}`); await key('\t');

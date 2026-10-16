@@ -111,3 +111,35 @@ test('empty account JSON preview says 无阅览 even when an unimported existing
   assert.match(right, /无阅览/);
   assert.ok(!right.includes('not-imported'));
 });
+
+test('Claude account messages wrap inside the left pane without losing their ending', () => {
+  const label = 'settings.json 中未发现 API Key/Token；不读取网页登录凭据或执行 apiKeyHelper。';
+  for (const width of [76, 96, 136]) {
+    const modal = { type: 'claude-providers', selected: 0, listing: { profiles: [], existing: { status: 'unavailable', label } } };
+    const lines = buildClaudeProviderLines(modal, width, 24);
+    const left = lines.flatMap(line => line.segments ? [line.segments[0].text.trimEnd()] : []).join('');
+    assert.ok(left.includes(`已有配置：${label}`), 'long discovery messages must wrap rather than truncate');
+    const layout = getClaudeProviderPreviewLayout(modal, width, 24);
+    for (const line of lines.filter(line => line.segments)) {
+      assert.equal(stringWidth(line.segments[0].text), layout.leftWidth);
+      assert.equal(stringWidth(line.text), width);
+    }
+    assert.ok(lines.some(line => line.segments?.[2].text.includes('无阅览')));
+  }
+});
+
+test('long selected account names, URLs and models wrap while keeping selection and the preview separate', () => {
+  const profile = { id: 'wrapped', name: '需要完整显示的测试供应商名称'.repeat(3), protocol: 'anthropic',
+    baseUrl: `https://gateway.example.com/${'long-api-path/'.repeat(4)}`, model: 'gateway/long-model-name[1m]', secret: 'fixture-wrap-secret' };
+  for (const width of [76, 96, 136]) {
+    const lines = buildClaudeProviderLines({ type: 'claude-providers', listing: { profiles: [profile] }, selected: 0 }, width, 40);
+    const rows = lines.filter(line => line.segments);
+    const left = rows.map(line => line.segments[0].text.trimEnd()).join('');
+    assert.ok(left.includes(profile.name));
+    assert.ok(left.includes(profile.baseUrl));
+    assert.ok(left.includes(profile.model));
+    assert.ok(rows.filter(line => line.segments[0].tone === 'selected').length > 1);
+    assert.ok(rows.every(line => line.segments[2].tone !== 'selected'));
+    assert.ok(!JSON.stringify(lines).includes(profile.secret));
+  }
+});

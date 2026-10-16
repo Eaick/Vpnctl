@@ -401,10 +401,16 @@ export default function App({ initialSection = 'overview', initialCliApp = 'code
   const [cliLoading, setCliLoading] = useState(false);
   const cliRequest = useRef(0);
   const busyLatch = useRef(false);
-  const dimensions = useMemo(() => ({
+  const [dimensions, setDimensions] = useState(() => ({
     width: stdout.columns || 120,
     height: stdout.rows || 30
-  }), [stdout.columns, stdout.rows]);
+  }));
+  useEffect(() => {
+    const resize = () => setDimensions({ width: stdout.columns || 120, height: stdout.rows || 30 });
+    stdout.on('resize', resize);
+    resize();
+    return () => stdout.off('resize', resize);
+  }, [stdout]);
   useEffect(() => {
     let mounted = true;
     void (async () => {

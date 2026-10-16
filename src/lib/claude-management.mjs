@@ -91,7 +91,9 @@ export function buildClaudeProviderLines(modal, width, height) {
   const w = Math.max(1, width), h = Math.max(1, height);
   const preview = modal.type === 'claude-providers' ? getClaudeProviderPreviewLayout(modal, w, h) : null;
   const line = (text, tone = 'normal', size = w) => ({ text: padText(String(text).replace(/[\x00-\x1f\x7f]/g, ' '), size), tone });
-  const bodyLine = (text, tone = 'normal') => line(text, tone, preview?.leftWidth || w);
+  const bodyWidth = preview?.leftWidth || w;
+  const bodyLine = (text, tone = 'normal') => line(text, tone, bodyWidth);
+  const bodyLines = (text, tone = 'normal') => wrapPreview(String(text).replace(/[\x00-\x1f\x7f]/g, ' '), bodyWidth).map(row => bodyLine(row, tone));
   const title = modal.type === 'claude-editor' ? `${modal.id ? '编辑' : '新增'} Claude API 账号 · 仅保存，不自动切换` : 'Claude Code · API 账号管理';
   const footer = modal.type === 'claude-editor'
     ? 'Tab/↑↓ 字段 · ←→ 选项 · Ctrl+U 清空 · Enter 保存预览 · Esc 返回'
@@ -108,22 +110,22 @@ export function buildClaudeProviderLines(modal, width, height) {
       if (selected && item.hint) body.push(line(item.hint, 'dim'));
     }
   } else {
-    body.push(bodyLine('API 中转地址 ≠ VPNCTL 网络代理；应用账号不会测试或扣费。', 'dim'));
+    body.push(...bodyLines('API 中转地址 ≠ VPNCTL 网络代理；应用账号不会测试或扣费。', 'dim'));
     const existing = modal.listing?.existing;
     if (existing) {
-      body.push(bodyLine(`已有配置：${existing.label}`, ['invalid', 'ambiguous'].includes(existing.status) ? 'warn' : 'dim'));
-      if (existing.profile) body.push(bodyLine(`  ${existing.profile.baseUrl} · 模型 ${existing.profile.model || 'Claude 默认'} · 凭据已隐藏`, 'dim'));
+      body.push(...bodyLines(`已有配置：${existing.label}`, ['invalid', 'ambiguous'].includes(existing.status) ? 'warn' : 'dim'));
+      if (existing.profile) body.push(...bodyLines(`  ${existing.profile.baseUrl} · 模型 ${existing.profile.model || 'Claude 默认'} · 凭据已隐藏`, 'dim'));
     }
     const profiles = modal.listing?.profiles || [];
-    if (!profiles.length) body.push(bodyLine(existing?.status === 'available' ? '尚无 API 账号，按 i 导入已有配置或 a 新增。' : '尚无 API 账号，按 a 新增。'));
+    if (!profiles.length) body.push(...bodyLines(existing?.status === 'available' ? '尚无 API 账号，按 i 导入已有配置或 a 新增。' : '尚无 API 账号，按 a 新增。'));
     for (const [index, profile] of profiles.entries()) {
       const selected = index === modal.selected;
       if (selected) focus = body.length;
-      body.push(bodyLine(`${selected ? '►' : ' '} ${profile.active ? '[当前]' : '[已保存]'} ${profile.name}${profile.pending ? '（修改未应用）' : ''}`, selected ? 'selected' : 'normal'));
-      body.push(bodyLine(`  ${CLAUDE_PROTOCOL_LABELS[profile.protocol]}${profile.protocol !== 'anthropic' ? ' · 不可激活' : ''}`, 'dim'));
-      body.push(bodyLine(`  ${profile.baseUrl} · 模型 ${profile.model || 'Claude 默认'}`, 'dim'));
+      body.push(...bodyLines(`${selected ? '►' : ' '} ${profile.active ? '[当前]' : '[已保存]'} ${profile.name}${profile.pending ? '（修改未应用）' : ''}`, selected ? 'selected' : 'normal'));
+      body.push(...bodyLines(`  ${CLAUDE_PROTOCOL_LABELS[profile.protocol]}${profile.protocol !== 'anthropic' ? ' · 不可激活' : ''}`, 'dim'));
+      body.push(...bodyLines(`  ${profile.baseUrl} · 模型 ${profile.model || 'Claude 默认'}`, 'dim'));
     }
-    if (modal.listing?.active) body.push(bodyLine(`已应用：${modal.listing.active.name}；请在新 Claude 会话中使用。`, 'accent'));
+    if (modal.listing?.active) body.push(...bodyLines(`已应用：${modal.listing.active.name}；请在新 Claude 会话中使用。`, 'accent'));
   }
   const available = Math.max(0, h - 2);
   const visible = available ? getVisibleWindow(body, focus, available).items : [];

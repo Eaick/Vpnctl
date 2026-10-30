@@ -62,14 +62,14 @@ function chatMessages(body) {
   return result;
 }
 
-export function toOpenAIRequest(body, profile) {
+export function toOpenAIRequest(body, profile, { stream = false } = {}) {
   if (!plain(body) || !Array.isArray(body.messages) || !Number.isSafeInteger(body.max_tokens) || body.max_tokens <= 0) throw new Error('messages 或 max_tokens 无效');
   const messages = chatMessages(body);
   const tools = (body.tools || []).map(tool => {
     if ((tool.type && tool.type !== 'custom') || typeof tool.name !== 'string' || !plain(tool.input_schema)) return reject();
     return { type: 'function', function: { name: tool.name, description: tool.description || '', parameters: tool.input_schema } };
   });
-  const common = { model: resolveClaudeModel(body.model, profile), stream: false };
+  const common = { model: resolveClaudeModel(body.model, profile)?.replace(/\[1m\]$/i, ''), stream };
   if (!common.model) throw new Error('请先配置默认上游模型');
   if (typeof body.temperature === 'number') common.temperature = body.temperature;
   if (typeof body.top_p === 'number') common.top_p = body.top_p;
@@ -79,6 +79,7 @@ export function toOpenAIRequest(body, profile) {
     : choice.type === 'tool' && choice.name ? { type: 'function', function: { name: choice.name } } : reject();
   // 保持 system/tools 的稳定前缀，交由支持缓存的上游做自动前缀缓存；不缓存用户响应。
   if (profile.protocol === 'openai-chat') return {
+    ...(stream ? { stream_options: { include_usage: true } } : {}),
     ...common, messages, [profile.tokenField || 'max_tokens']: body.max_tokens,
     ...(tools.length ? { tools, tool_choice: toolChoice } : {}),
     ...(body.stop_sequences?.length ? { stop: body.stop_sequences } : {})

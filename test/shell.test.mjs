@@ -28,10 +28,9 @@ test.after(async () => {
 test('buildManagedBashrcBlock contains proxy functions and aliases', () => {
   const block = buildManagedBashrcBlock();
   assert.match(block, /vpnctl-proxy-on/);
-  assert.match(block, /vpnctl-codex/);
-  assert.match(block, /codex\(\)/);
+  assert.match(block, /shell hook/);
+  assert.ok(!block.includes('codex()'));
   assert.match(block, /vpnon/);
-  assert.match(block, /codexvpn/);
   assert.match(block, /vpnstat/);
 });
 

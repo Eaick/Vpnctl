@@ -147,6 +147,27 @@ test('remote subscriptions negotiate native YAML and preserve Trojan and AnyTLS 
   }
 });
 
+test('subscription headers persist separately from nodes and missing headers retain stale metadata', async () => {
+  const config = createConfig('dev');
+  const created = await addSubscriptionFromUrl('https://example.com/sub', 'Metadata', config);
+  const oldFetch = globalThis.fetch;
+  let header = 'upload=100; download=200; total=1000; expire=1900000000';
+  globalThis.fetch = async () => new Response('proxies:\n  - name: fixture-node\n    type: vless\n',
+    { headers: header ? { 'subscription-userinfo': header } : {} });
+  try {
+    await syncSubscriptions({ id: created.id }, config);
+    const first = (await loadSubscriptions(config))[0];
+    assert.equal(first.subscriptionInfo.total, 1000);
+    assert.equal(first.nodes.length, 1);
+    header = null;
+    await syncSubscriptions({ id: created.id }, config);
+    const second = (await loadSubscriptions(config))[0];
+    assert.equal(second.subscriptionInfo.total, 1000);
+    assert.equal(second.subscriptionInfo.stale, true);
+    assert.deepEqual(second.nodes, first.nodes);
+  } finally { globalThis.fetch = oldFetch; }
+});
+
 test('pending remote providers use the same native format request header', async () => {
   const config = createConfig('dev');
   const created = await addSubscriptionFromUrl('https://example.com/sub', 'Remote', config);

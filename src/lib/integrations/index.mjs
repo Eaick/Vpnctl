@@ -4,6 +4,8 @@ import { inspectClaude, planClaudeSync, syncClaudeSettings, uninstallClaudeSetti
 import { resolveApplicationProxy, probeApplicationService, redactText } from './runtime.mjs';
 import { inspectCodexAccount } from './codex-account.mjs';
 import { listClaudeProviders } from './claude-providers.mjs';
+import { listCodexProviders } from './codex-providers.mjs';
+import { readApplicationPolicy, setApplicationProxy, resolveApplicationContext } from './app-policy.mjs';
 
 export function validateApplication(app) {
   if (app !== 'codex' && app !== 'claude') throw new Error('应用只支持 codex 或 claude');
@@ -12,11 +14,14 @@ export function validateApplication(app) {
 
 export async function inspectIntegration(app, { network = false, account = false, context, ...options } = {}) {
   validateApplication(app);
-  const current = context || await resolveApplicationProxy(options);
+  const current = context || await resolveApplicationContext(app, options);
   const report = await (app === 'codex' ? inspectCodex : inspectClaude)({ ...options, context: current });
   const shell = await detectShellIntegration().catch(() => ({ installed: false }));
   const installed = app === 'codex' ? shell.codexWrapper : shell.claudeWrapper;
-  const sample = app === 'codex' && account && report.installed === true ? await inspectCodexAccount({ ...options, context: current }) : null;
+  const codexApi = app === 'codex' ? (await listCodexProviders(options)).profiles.find(profile => profile.active) : null;
+  const sample = codexApi ? { account: { type: 'apiKey', status: 'unverified', identity: codexApi.name, label: '已选择 API 账号（未验证认证）', planType: 'API' },
+    quota: { status: 'unavailable', buckets: [], resetCreditsAvailable: null, detail: 'API 账号由服务商计费，不提供 ChatGPT 5h/weekly 额度。' } }
+    : app === 'codex' && account && report.installed === true ? await inspectCodexAccount({ ...options, context: current }) : null;
   let providers, providerCheck;
   if (app === 'claude') {
     try {
@@ -31,7 +36,7 @@ export async function inspectIntegration(app, { network = false, account = false
     ...report,
     ...(sample || {}),
     ...(providers ? { providers } : {}),
-    proxy: { available: current.available, endpoint: current.displayProxy, mode: current.proxyMode },
+    proxy: { available: current.available, endpoint: current.displayProxy, mode: current.proxyMode, enabled: current.proxyEnabled !== false },
     shell: { installed: Boolean(installed), path: shell.bashrcPath || '' },
     checks: [
       ...(current.checks || []),
@@ -43,7 +48,7 @@ export async function inspectIntegration(app, { network = false, account = false
         : await probeApplicationService(app, current, options)] : []),
       ...(sample ? [
         { id: 'account', status: sample.account.status === 'signedOut' ? 'warn' : 'unknown', label: sample.account.label,
-          detail: [sample.account.identity, sample.account.planType, '由当前 CLI 的官方只读接口取得，不读取或输出 Token'].filter(Boolean).join('；') },
+          detail: [sample.account.identity, sample.account.planType, codexApi ? '来自当前 VPNCTL API 账号配置，未联网验证' : '由当前 CLI 的官方只读接口取得，不读取或输出 Token'].filter(Boolean).join('；') },
         { id: 'quota', status: sample.quota.status === 'ok' ? 'ok' : 'unknown', label: sample.quota.status === 'ok' ? '官方额度接口已响应' : '账号额度未验证', detail: sample.quota.detail },
         { id: 'authentication', status: sample.quota.status === 'ok' ? 'ok' : 'unknown', label: sample.quota.status === 'ok' ? '额度查询获得授权响应' : '远程账号认证未验证', detail: '本地登录状态与网络响应不能代替认证；本次未执行模型推理，也未兑换额度重置' }
       ] : [{ id: 'authentication', status: 'unknown', label: '账号认证未验证', detail: app === 'codex'
@@ -55,7 +60,13 @@ export async function inspectIntegration(app, { network = false, account = false
 
 export async function prepareIntegrationAction(app, action, options = {}) {
   validateApplication(app);
-  const context = options.context || await resolveApplicationProxy(options);
+  const context = options.context || await resolveApplicationContext(app, options);
+  if (action === 'proxy') {
+    const current = await readApplicationPolicy(app, options);
+    return { app, action, enabled: !current.enabled, digest: current.snapshot.digest, plan: { allowed: true,
+      steps: [{ label: `${!current.enabled ? '开启' : '关闭'} ${app} 的 VPNCTL 网络代理；下一次启动时动态生效` }],
+      warnings: ['不会改 API 账号、当前 Shell 或强制重启已有后台进程。Claude 持久代理字段需明确同步或恢复。'] } };
+  }
   if (action === 'repair' && app === 'codex') {
     const report = await inspectCodex({ ...options, context });
     return { app, action, report, plan: planCodexRepair(report), proxy: context.displayProxy };
@@ -69,7 +80,8 @@ export async function prepareIntegrationAction(app, action, options = {}) {
 
 export async function executeIntegrationAction(prepared, { confirmed = false, ...options } = {}) {
   if (!confirmed) throw new Error('需要确认后才能修改应用集成');
-  const context = options.context || await resolveApplicationProxy(options);
+  if (prepared.action === 'proxy') return setApplicationProxy(prepared.app, prepared.enabled, { ...options, confirmed, expectedDigest: prepared.digest });
+  const context = options.context || await resolveApplicationContext(prepared.app, options);
   if (!context.available) throw new Error('本账户受管 HTTP 代理不可用，未执行修复或同步');
   if (context.displayProxy !== prepared.proxy) throw new Error('代理端口已改变，请重新生成操作预览');
   if (prepared.app === 'codex' && prepared.action === 'repair') {

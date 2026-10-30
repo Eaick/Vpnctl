@@ -1,6 +1,6 @@
 # VPNCTL
 
-[![Version](https://img.shields.io/badge/VPNCTL-0.2.0-0f766e)](https://github.com/Eaick/Vpnctl)
+[![Version](https://img.shields.io/badge/VPNCTL-0.2.1-0f766e)](https://github.com/Eaick/Vpnctl)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![mihomo](https://img.shields.io/badge/runtime-mihomo-0f766e)](https://github.com/MetaCubeX/mihomo)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -17,6 +17,13 @@
 
 ## 最新动态
 
+**2026-10-30 · VPNCTL 0.2.1**
+
+- 读取订阅 `subscription-userinfo` 流量与到期信息，订阅详情、节点提示及总览显示采样数据。
+- Codex 新增 API 账号管理；Claude 新增 OpenAI Chat / Responses 转换和最近请求监控。
+- Codex 与 Claude 可独立切换“通过 VPNCTL / 直接联网”，bashrc 仅加载通用动态入口；菜单使用更直白的说明。
+- 新增 IPv6 地址适配、连接支持开关及出口检测；保留默认 IPv4 行为。
+
 **2026-10-16 · VPNCTL 0.2.0**
 
 - Claude 模型新增独立的 1M 上下文声明开关，默认关闭；保存与应用前须确认模型及服务商支持，自动追加或移除 `[1m]`，不重复追加。
@@ -31,28 +38,23 @@
 - Claude 新增原生 Anthropic API 账号的增删改查、切换和模型映射，保留动态终端代理及安全配置恢复。
 - OpenAI Chat / Responses 配置目前只能保存，转换服务尚未接通，不能激活。
 
-**2026-10-09 · VPNCTL 0.1.1**
-
-- 节点页按终端宽度显示 1～4 列卡片，低高度时自动使用紧凑列表。
-- 将可识别的流量、到期、重置和公告提示放入只读提示区，按 `v` 展开或收起，不参与节点选择和测速。
-- 保留独立光标和当前使用标记，修正三角标记的终端宽度问题，支持方向键按卡片移动。
-- 新增 `vpnctl --version`，TUI 顶部同步显示 VPNCTL 程序版本。
-- 保留原有订阅下载、节点名称、Mihomo 配置和 provider 测速回退逻辑，并补充终端渲染及切换、测速回归测试。
-
-> 流量提示来自最近同步的订阅节点文字，不是实时余额。本版尚未解析 `subscription-userinfo` 响应头；若机场只通过响应头提供流量信息，则不会显示额度。
+> 流量信息来自最近同步的 `subscription-userinfo` 响应头和节点提示文字，不是实时余额。缺失字段显示“未提供”，同步失败或响应头缺失时标记旧数据。
 
 > **已安装用户：** 根据安装方式选择 [Git 克隆更新](#git-克隆安装更新) 或 [ZIP 下载更新](#zip-下载安装更新)。本次更新无需重新初始化。
 
-## 下个版本计划
+## 联网方式与 IPv6
 
-- 计划解析订阅响应中的 `subscription-userinfo` HTTP 响应头，读取服务商提供的流量用量、总量和到期时间等元数据，补充节点文字之外的订阅信息来源。
-- **VPNCTL 0.2.0 尚未实现此能力。** 当前仍仅从可识别的订阅节点文字提取提示；缺失数据不会按零处理或凭空推算。
+在 CLI 管理中分别选择 Codex 或 Claude Code，进入“切换联网方式”后确认即可。新会话使用当前选择；已有 Daemon、后台任务不会自动重启。开启 VPNCTL 代理时需要 Mihomo 在线，直接联网则使用服务器自身网络。
+
+升级后运行 `vpnctl shell install` 更新通用入口，再打开新终端。bashrc 通过 `vpnctl shell hook` 加载动态包装；应用的代理端口和开关不写死在 bashrc。
+
+在“端口与环境”页按 `6` 可开启或关闭 IPv6，也可运行 `vpnctl config set-ipv6 --mode on --yes`（关闭使用 `off`）。总览分别显示 IPv4 / IPv6 检测结果。此设置不会给没有 IPv6 网络的服务器增加公网连接能力，不修改系统路由或启用 TUN。
 
 ## 项目简介
 
 **VPNCTL 是面向 Linux 服务器和 SSH 会话的 Mihomo 终端管理器。** 不依赖桌面环境，在中文 TUI 中管理订阅、选择节点、测速、配置端口，并让当前账户的终端应用使用代理。
 
-VPNCTL 当前版本：**0.2.0**，可执行 `vpnctl --version` 查看；这不是 npm 工具或 Mihomo 内核的版本。它不是全系统透明代理，不自动接管其他用户或其他进程的网络。
+VPNCTL 当前版本：**0.2.1**，可执行 `vpnctl --version` 查看；这不是 npm 工具或 Mihomo 内核的版本。它不是全系统透明代理，不自动接管其他用户或其他进程的网络。
 
 ## 导航
 
@@ -182,7 +184,7 @@ bash scripts/vpnctl.sh install
 
 ### 更新后操作
 
-运行 `vpnctl --version` 确认显示 `VPNCTL 0.2.0`，再启动 `vpnctl`。节点页布局更新无需重新初始化；从订阅兼容性修复前的旧版本升级时，在订阅页激活要使用的订阅，按 `y` 重新同步，再进入节点页按 `d` 测速，以替换旧订阅缓存。
+运行 `vpnctl --version` 确认显示 `VPNCTL 0.2.1`，再启动 `vpnctl`。升级后更新 Shell 集成；在订阅页按 `y` 同步可读取流量响应头，无需重新初始化或重新添加订阅。
 
 若 npm 报错连接已关闭的本地代理端口，在当前终端执行 `vpnoff`。npm 自己保存的代理还需检查 `npm config get proxy` 和 `npm config get https-proxy`；Mihomo 正在运行且下载需要代理时，可执行 `vpnon` 获取当前有效端口。
 
@@ -349,13 +351,21 @@ Daemon 可能保留旧代理或旧版本，版本不一致也不代表它是所�
 | --- | --- |
 | 供应商名称、请求根地址 | 区分账号；填写服务商 HTTPS API 根地址，不填完整 `/messages` 等请求路径 |
 | API Key / Bearer Token、认证字段 | 按服务商选择 `ANTHROPIC_API_KEY` 或 `ANTHROPIC_AUTH_TOKEN`；密钥不回显，编辑时留空保留 |
-| 上游格式 | Anthropic Messages 原生格式可应用；OpenAI Chat / Responses 目前仅可保存，转换服务未接通，禁止激活 |
+| 接口类型 | Claude 原生接口，或 OpenAI Chat / Responses（由本地网关自动转换） |
 | 默认模型、Sonnet / Opus / Haiku / Subagent | 填写服务商实际模型 ID；可选映射留空时不覆盖 |
 | 每个模型的“声明 1M” | 默认关闭；开启后自动追加一个 `[1m]` 后缀，关闭后移除该后缀；必须填写具体模型 ID |
 
 账号列表按 `a` 新增、`e` 编辑、`x` 删除、`i` 读取已有配置、`Enter` 应用所选账号、`b` 恢复原 API 配置。写操作先展示预览，默认取消；按 `Tab` 选择确认再按 `Enter`。表单按 `Tab` / 上下键选择字段，左右键切换选项，`Ctrl+U` 清空当前字段。
 
-账号查看界面按左侧 55%、右侧 45% 分栏。右侧只读 JSON 随当前选中账号更新，凭据隐藏，`PgUp` / `PgDn` 滚动预览；没有已保存账号时显示“无阅览”。原生账号预览的是该账号的 API 环境字段，不是完整的 `settings.json`；未接通的 OpenAI 转换账号只预览保存参数，不表示配置可应用。
+账号查看界面按左侧 55%、右侧 45% 分栏。右侧只读 JSON 随当前选中账号更新，凭据隐藏，`PgUp` / `PgDn` 滚动预览；没有已保存账号时显示“无阅览”。预览为账号参数，不是完整的 `settings.json`。
+
+应用转换账号后，通过终端集成的 `claude` / `claudevpn` 或 `vpnctl integrate claude run` 启动新会话。本地网关使用随机端口和会话密钥，退出会话后关闭；不会将临时网关地址写入用户配置。支持文字、图片、常规工具调用和 SSE 流式转换；不兼容的消息格式会报错，不保证服务商的所有扩展功能都能转换。
+
+“查看最近请求与用量”显示最近 100 次受管请求的状态、耗时和上游返回的 Token 用量，缺失用量显示未提供。统计不保存消息正文、代码或密钥；不经过 VPNCTL 启动入口的请求不会被采集。
+
+Codex 标签的“管理 API 账号与模型”支持保存、编辑、删除和切换接口配置，尊重 `CODEX_HOME`。密钥只传给子进程环境，不写入进程参数；恢复原配置或删除账号不会删除 `auth.json` 或修改原有 `config.toml`。配置通过启动参数应用，新会话生效；已有共享 Daemon 的环境仍需单独诊断。
+
+使用 API 账号启动时会检查当前 CLI 能力：支持 `--no-daemon` 时使用独立会话，确保继承本次选择的 Key；若版本存在 Daemon 但无法确认独立启动方式，会提示更新 CLI。账号与额度页不会把原有浏览器登录账号的 ChatGPT 额度归给所选 API 账号。
 
 进入账号列表会自动发现 `~/.claude/settings.json`（标准文件名带 `s`）中的 API 配置，尊重 `CLAUDE_CONFIG_DIR`。按 `i` 预览并确认导入 API 地址、Key/Token 及已支持的模型字段；不修改源文件、不自动接管激活状态、不读取网页登录凭据或执行 `apiKeyHelper`。重复导入相同账号不会产生重复记录；同时存在两种认证凭据时提示先明确选择，不猜测。若未设置请求地址，使用 Anthropic 官方默认地址。
 

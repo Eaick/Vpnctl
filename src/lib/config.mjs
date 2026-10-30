@@ -3,6 +3,7 @@ import os from 'node:os';
 import process from 'node:process';
 import { buildRuntimePaths, detectRuntimeMode } from './runtime.mjs';
 import { resolveThemeName } from './theme.mjs';
+import { endpointUrl } from './endpoints.mjs';
 
 const DEFAULT_PORTS = {
   dev: {
@@ -42,7 +43,7 @@ function normalizeHost(value, fallback = '127.0.0.1') {
 }
 
 function buildEndpoint(protocol, host, port) {
-  return `${protocol}://${host}:${port}`;
+  return endpointUrl(protocol, host, port);
 }
 
 export function normalizeProxyMode(value, fallback = 'mix') {
@@ -111,6 +112,7 @@ export function createConfig(mode = detectRuntimeMode(), overrides = {}) {
     paths,
     installState,
     proxyMode,
+    ipv6: overrides.ipv6 ?? installState?.ipv6,
     ports,
     controllerHost,
     proxyHost,

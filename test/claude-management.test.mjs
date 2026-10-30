@@ -21,7 +21,7 @@ test('Claude provider form contains essential sections and never preloads a save
 
 test('Claude accounts view exposes supported state without claiming OpenAI conversion is ready', () => {
   const lines = buildClaudeProviderLines({ type: 'claude-providers', selected: 0, listing: { profiles: [{ id: 'example', name: '测试账号', protocol: 'openai-chat', baseUrl: 'https://example.com', model: 'model', active: false }] } }, 76, 18);
-  assert.match(lines.map(line => line.text).join('\n'), /未接通|不可激活/);
+  assert.match(lines.map(line => line.text).join('\n'), /自动转换/);
   const empty = buildClaudeProviderLines({ type: 'claude-providers', selected: 0, listing: { profiles: [] } }, 76, 10);
   assert.match(empty.map(line => line.text).join('\n'), /新增/);
 });

@@ -73,6 +73,16 @@ export function buildManagedBashrcBlock(commandName = 'vpnctl', codexCommand = '
     `vpnctl-proxy-on() { eval "$(${commandName} env --shell bash)"; }`,
     'vpnctl-proxy-off() { unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy; }',
     `vpnctl-proxy-status() { ${commandName} doctor; }`,
+    `eval "$(command ${commandName} shell hook)"`,
+    "alias vpnon='vpnctl-proxy-on'",
+    "alias vpnoff='vpnctl-proxy-off'",
+    "alias vpnstat='vpnctl-proxy-status'",
+    BLOCK_END
+  ].join('\n');
+}
+
+export function buildApplicationShellHook(commandName = 'vpnctl', codexCommand = 'codex') {
+  return [
     `vpnctl-codex-env() { eval "$(${commandName} env --shell bash --app codex --quiet)"; }`,
     codexCommand === 'codex'
       ? `vpnctl-codex() { command ${commandName} integrate codex run -- "$@"; }`
@@ -81,12 +91,8 @@ export function buildManagedBashrcBlock(commandName = 'vpnctl', codexCommand = '
     `vpnctl-claude-env() { eval "$(${commandName} env --shell bash --app claude --quiet)"; }`,
     `vpnctl-claude() { command ${commandName} integrate claude run -- "$@"; }`,
     'claude() { vpnctl-claude "$@"; }',
-    "alias vpnon='vpnctl-proxy-on'",
-    "alias vpnoff='vpnctl-proxy-off'",
-    "alias vpnstat='vpnctl-proxy-status'",
     "alias codexvpn='vpnctl-codex'",
-    "alias claudevpn='vpnctl-claude'",
-    BLOCK_END
+    "alias claudevpn='vpnctl-claude'"
   ].join('\n');
 }
 
@@ -97,8 +103,8 @@ export async function detectShellIntegration({ bashrcPath = getDefaultBashrcPath
       shell: 'bash',
       bashrcPath,
       installed: content.includes(BLOCK_START) && content.includes(BLOCK_END),
-      codexWrapper: content.includes('vpnctl-codex()') && content.includes('codex()'),
-      claudeWrapper: content.includes('vpnctl-claude()') && content.includes('claude()')
+      codexWrapper: content.includes('shell hook') || content.includes('vpnctl-codex()') && content.includes('codex()'),
+      claudeWrapper: content.includes('shell hook') || content.includes('vpnctl-claude()') && content.includes('claude()')
     };
   } catch {
     return {

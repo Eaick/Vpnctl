@@ -22,6 +22,11 @@ export function getLocalIPv4(interfaces = os.networkInterfaces()) {
     || '';
 }
 
+export function getLocalIPv6(interfaces = os.networkInterfaces()) {
+  return Object.values(interfaces).flatMap(entries => entries || [])
+    .find(entry => (entry.family === 'IPv6' || entry.family === 6) && !entry.internal && /^[23]/.test(entry.address))?.address || '';
+}
+
 export function formatMemory(bytes) {
   return Number.isFinite(bytes) && bytes >= 0 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : '未知';
 }
@@ -58,6 +63,8 @@ async function runProxyCurl(proxy, args) {
 export async function loadOverviewMetrics(config, status) {
   const metrics = {
     localIp: getLocalIPv4(),
+    localIpv6: getLocalIPv6(),
+    proxyIpv6: '',
     proxyIp: '',
     network: '未检测',
     networkDelayMs: null,
@@ -71,7 +78,8 @@ export async function loadOverviewMetrics(config, status) {
     getProcessMemory(status.pid),
     api('/connections', { signal: AbortSignal.timeout(3000) }, config),
     runProxyCurl(config.httpProxy, ['https://api.ipify.org']),
-    runProxyCurl(config.httpProxy, ['--output', os.devNull, '--write-out', '%{http_code} %{time_total}', 'https://cp.cloudflare.com/generate_204'])
+    runProxyCurl(config.httpProxy, ['--output', os.devNull, '--write-out', '%{http_code} %{time_total}', 'https://cp.cloudflare.com/generate_204']),
+    runProxyCurl(config.httpProxy, ['https://api6.ipify.org'])
   ]);
 
   if (results[0].status === 'fulfilled') metrics.mihomoMemory = results[0].value;
@@ -80,6 +88,7 @@ export async function loadOverviewMetrics(config, status) {
     metrics.mihomoMemory ??= results[1].value?.memory ?? null;
   }
   if (results[2].status === 'fulfilled' && net.isIP(results[2].value)) metrics.proxyIp = results[2].value;
+  if (results[4].status === 'fulfilled' && net.isIP(results[4].value) === 6) metrics.proxyIpv6 = results[4].value;
   if (results[3].status === 'fulfilled') {
     const [code, seconds] = results[3].value.split(/\s+/);
     metrics.network = code === '204' ? '正常' : `HTTP ${code || '未知'}`;

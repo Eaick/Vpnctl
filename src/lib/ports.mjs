@@ -1,12 +1,13 @@
 import net from 'node:net';
 import { URL } from 'node:url';
+import { hostPort, unbracketHost } from './endpoints.mjs';
 
 export function getPortKeys(proxyMode = 'mix') {
   return proxyMode === 'separate' ? ['http', 'socks', 'api'] : ['mixed', 'api'];
 }
 
 function normalizeLocalHost(hostname, fallbackHost = '127.0.0.1') {
-  return hostname || fallbackHost;
+  return unbracketHost(hostname || fallbackHost);
 }
 
 function parseEndpoint(value, fallbackProtocol, fallbackPort) {
@@ -198,14 +199,14 @@ export function listBusyEndpoints(plan) {
 }
 
 export function buildPortEnvSnippet(plan) {
-  const lines = [`export MIHOMO_API="http://${plan.api.host}:${plan.api.port}"`];
+  const lines = [`export MIHOMO_API="http://${hostPort(plan.api.host, plan.api.port)}"`];
 
   if (plan.mode === 'separate') {
-    lines.push(`export MIHOMO_HTTP_PROXY="http://${plan.http.host}:${plan.http.port}"`);
-    lines.push(`export MIHOMO_SOCKS_PROXY="socks5://${plan.socks.host}:${plan.socks.port}"`);
+    lines.push(`export MIHOMO_HTTP_PROXY="http://${hostPort(plan.http.host, plan.http.port)}"`);
+    lines.push(`export MIHOMO_SOCKS_PROXY="socks5://${hostPort(plan.socks.host, plan.socks.port)}"`);
   } else {
-    lines.push(`export MIHOMO_HTTP_PROXY="http://${plan.mixed.host}:${plan.mixed.port}"`);
-    lines.push(`export MIHOMO_SOCKS_PROXY="socks5://${plan.mixed.host}:${plan.mixed.port}"`);
+    lines.push(`export MIHOMO_HTTP_PROXY="http://${hostPort(plan.mixed.host, plan.mixed.port)}"`);
+    lines.push(`export MIHOMO_SOCKS_PROXY="socks5://${hostPort(plan.mixed.host, plan.mixed.port)}"`);
   }
 
   return lines.join('\n');

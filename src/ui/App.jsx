@@ -22,9 +22,14 @@ import { getNodeNotices, getSelectableNodes } from '../lib/tui-node-view.mjs';
 import { VPNCTL_VERSION } from '../lib/version.mjs';
 import { inspectIntegration, prepareIntegrationAction, executeIntegrationAction, installApplicationIntegration, redactText } from '../lib/integrations/index.mjs';
 import { buildCliManagementLines, buildIntegrationModalLines, getCliActions } from '../lib/cli-management.mjs';
-import { buildClaudeProviderLines, createClaudeProviderEditor, readClaudeProviderInput, getClaudeProviderPreviewLayout } from '../lib/claude-management.mjs';
+import { buildClaudeProviderLines, createClaudeProviderEditor, createCodexProviderEditor, readClaudeProviderInput, getClaudeProviderPreviewLayout } from '../lib/claude-management.mjs';
+import { listCodexProviders, prepareCodexProvider, editCodexProvider } from '../lib/integrations/codex-providers.mjs';
+import { readClaudeRequests } from '../lib/integrations/claude-monitor.mjs';
+import { setIpv6Enabled } from '../lib/network-settings.mjs';
 import { listClaudeProviders, prepareClaudeProviderAction, executeClaudeProviderAction } from '../lib/integrations/claude-providers.mjs';
 import { resolveApplicationProxy } from '../lib/integrations/runtime.mjs';
+import { resolveApplicationContext } from '../lib/integrations/app-policy.mjs';
+import { subscriptionInfoLines, subscriptionDetailLines } from '../lib/subscription-info.mjs';
 import { formatActionPreview } from '../integrate.mjs';
 import { formatMemory, loadOverviewMetrics } from '../lib/overview-monitor.mjs';
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
@@ -528,7 +533,20 @@ export default function App({ initialSection = 'overview', initialCliApp = 'code
   const performCliAction = async () => {
     const app = state.cliApp;
     const action = getCliActions(app)[state.cliAction]?.id;
-    if (app === 'claude' && action === 'providers') {
+    if (action === 'requests') {
+      await withBusy(async () => {
+        const records = await readClaudeRequests();
+        const lines = ['仅显示经 VPNCTL 启动入口发起的请求，Token 未返回时显示未提供。',
+          ...records.slice().reverse().flatMap(item => [
+            `${item.sampledAt} · HTTP ${item.status} · ${item.providerName || item.protocol} · ${item.model || '未提供模型'}`,
+            `总耗时 ${item.durationMs}ms · 首次输出 ${item.firstByteMs ?? '--'}ms · 输入 ${item.inputTokens ?? '未提供'} / 输出 ${item.outputTokens ?? '未提供'} Token`
+          ])];
+        if (!records.length) lines.push('暂无请求记录；请通过 VPNCTL 终端入口使用已应用的 API 账号。');
+        updateState(next => { next.modal = { type: 'cli-progress', lines, done: true, scroll: 0 }; });
+      }, null);
+      return;
+    }
+    if (action === 'providers') {
       await withBusy(() => openClaudeProviders(), null);
       return;
     }
@@ -546,12 +564,21 @@ export default function App({ initialSection = 'overview', initialCliApp = 'code
     }, null);
   };
   const openClaudeProviders = async (selectedId) => {
-    const listing = await listClaudeProviders();
+    const app = state.cliApp;
+    const listing = app === 'codex' ? await listCodexProviders() : await listClaudeProviders();
+    if (app === 'codex') listing.profiles = listing.profiles.map(profile => ({ ...profile, protocol: 'codex' }));
     const selected = Math.max(0, listing.profiles.findIndex(profile => profile.id === (selectedId || listing.activeId)));
-    updateState(next => { next.modal = { type: 'claude-providers', listing, selected, previewScroll: 0 }; });
+    updateState(next => { next.modal = { type: 'claude-providers', app, listing, selected, previewScroll: 0 }; });
   };
   const previewClaudeProvider = async (action, options = {}) => {
-    const context = action === 'apply' ? await resolveApplicationProxy() : undefined;
+    if (state.cliApp === 'codex') {
+      const plan = await prepareCodexProvider(action, options);
+      updateState(next => { next.modal = { type: 'cli-confirm', prepared: { app: 'codex', action: 'codex-provider', plan },
+        providerFlow: true, providerInput: options.input, confirmSelected: false, scroll: 0,
+        lines: [...plan.steps.map(step => step.label), ...plan.warnings] }; });
+      return;
+    }
+    const context = action === 'apply' ? await resolveApplicationContext('claude') : undefined;
     const plan = await prepareClaudeProviderAction(action, { ...options, context });
     const prepared = { app: 'claude', action: 'provider', plan };
     updateState(next => {
@@ -572,14 +599,19 @@ export default function App({ initialSection = 'overview', initialCliApp = 'code
         const progress = step => updateState(next => {
           if (next.modal?.type === 'cli-progress') next.modal.lines.push(redactText(typeof step === 'string' ? step : step.label || step.id || '执行中'));
         });
-        const result = modal.prepared.action === 'install'
+        const result = modal.prepared.action === 'ipv6'
+          ? await setIpv6Enabled(modal.prepared.plan.enabled, { confirmed: true })
+          : modal.prepared.action === 'install'
           ? await installApplicationIntegration(modal.prepared.app)
           : modal.prepared.action === 'uninstall-shell'
             ? await uninstallShellIntegration({})
+            : modal.prepared.action === 'codex-provider'
+              ? await editCodexProvider(modal.prepared.plan.action, { input: modal.providerInput, id: modal.prepared.plan.id,
+                expectedDigest: modal.prepared.plan.expectedDigest, confirmed: true })
             : modal.prepared.action === 'provider'
               ? await executeClaudeProviderAction(modal.prepared.plan, { input: modal.providerInput, confirmed: true,
                 acknowledge1m: modal.prepared.plan.requires1mConfirmation === true && modal.confirmSelected,
-                ...(modal.prepared.plan.action === 'apply' ? { context: await resolveApplicationProxy() } : {}) })
+                ...(modal.prepared.plan.action === 'apply' ? { context: await resolveApplicationContext('claude') } : {}) })
               : await executeIntegrationAction(modal.prepared, { confirmed: true, acknowledgeActive: true, acknowledgeConflicts: true, onProgress: progress });
         progress(result.message || (modal.prepared.action === 'install' ? '终端包装已更新，请在新终端使用。' : '操作结束，请检查诊断中的未验证项目。'));
         updateState(next => setNotice(next, result.warning ? 'warn' : 'success', redactText(result.message || '操作结束，请检查未验证项目')));
@@ -766,9 +798,9 @@ export default function App({ initialSection = 'overview', initialCliApp = 'code
           next.modal.previewScroll = 0;
         });
         else if (input === 'a' || input === 'e' && profile) updateState(next => {
-          next.modal = createClaudeProviderEditor(input === 'e' ? profile : {});
+          next.modal = (modal.app === 'codex' ? createCodexProviderEditor : createClaudeProviderEditor)(input === 'e' ? profile : {});
         });
-        else if (input === 'b' || input === 'i' || profile && (key.return || input === 'x')) await withBusy(async () => {
+        else if (input === 'b' || input === 'i' && modal.app !== 'codex' || profile && (key.return || input === 'x')) await withBusy(async () => {
           await previewClaudeProvider(input === 'i' ? 'import-settings' : input === 'b' ? 'restore' : input === 'x' ? 'delete' : 'apply', input === 'i' ? {} : { id: profile?.id });
         }, null);
         return;
@@ -1219,6 +1251,12 @@ export default function App({ initialSection = 'overview', initialCliApp = 'code
       });
       return;
     }
+    if (input === '6' && state.sectionId === 'ports') {
+      const enabled = createConfig().ipv6 !== true;
+      updateState(next => { next.modal = { type: 'cli-confirm', prepared: { action: 'ipv6', plan: { allowed: true, enabled } },
+        lines: [`${enabled ? '开启' : '关闭'} Mihomo IPv6 连接支持`, '可能热重载或重启本账户内核；需要服务器本身具备相应网络。'], confirmSelected: false, scroll: 0 }; });
+      return;
+    }
     if (input === 'p') {
       updateState(next => {
         next.modal = createPortModal(next.snapshot);
@@ -1325,18 +1363,21 @@ export default function App({ initialSection = 'overview', initialCliApp = 'code
     }),
     emptyText: '没有测速目标'
   });
+  const subscriptionDetails = subscriptionDetailLines(subscriptions.find(item => item.id === state.selectedSubscriptionId), infoWidth)
+    .slice(0, Math.max(0, middle - 5));
   const subscriptionLines = listLines({
     title: `订阅 (${subscriptions.length})${state.filters.subscriptions ? ` / ${state.filters.subscriptions}` : ''}`,
     items: subscriptions,
     selectedId: state.selectedSubscriptionId,
     width: infoWidth,
-    height: Math.max(1, middle - 2),
+    height: Math.max(1, middle - 2 - subscriptionDetails.length),
     renderRow: (item, isSelected) => ({
       text: padText(`${isSelected ? '>' : ' '} ${truncateText(item.displayName, Math.max(8, infoWidth - 24))} ${formatSubscriptionState(item.enabled)} ${formatSyncState(item.syncStatus)}`, infoWidth),
       tone: isSelected ? 'selected' : item.enabled ? 'active' : 'normal'
     }),
     emptyText: '还没有订阅，按 a 添加'
   });
+  subscriptionLines.push(...subscriptionDetails);
   const providerLines = listLines({
     title: `提供方 (${getProviders(state).length})${state.filters.providers ? ` / ${state.filters.providers}` : ''}`,
     items: getProviders(state),
@@ -1383,13 +1424,13 @@ export default function App({ initialSection = 'overview', initialCliApp = 'code
     lines: [`PID ${state.snapshot.status.pid || '无'}`, `版本 ${state.snapshot.status.version?.version || '未知'}`]
   }, {
     title: '当前连接节点',
-    lines: [`订阅 ${activeSubscription?.displayName || '无'}`, `节点 ${currentNodeLabel}`]
+    lines: [`订阅 ${activeSubscription?.displayName || '无'}`, `节点 ${currentNodeLabel}`, ...subscriptionInfoLines(activeSubscription)]
   }, {
     title: '端口配置',
     lines: [proxyPorts, `API ${portLabel('api')} · ${state.snapshot.status.proxyMode}`]
   }, {
     title: '网络检测',
-    lines: [`内网 ${overviewMetrics?.localIp || '未知'} · 出口 ${overviewMetrics?.proxyIp || '未知'}`, `代理 ${overviewMetrics?.network || '检测中'}${overviewMetrics?.networkDelayMs != null ? ` · ${overviewMetrics.networkDelayMs}ms` : ''}`]
+    lines: [`IPv4 内网 ${overviewMetrics?.localIp || '未知'} · 出口 ${overviewMetrics?.proxyIp || '未知'}`, `IPv6 内网 ${overviewMetrics?.localIpv6 || '未检测到'} · 出口 ${overviewMetrics?.proxyIpv6 || '未检测到'}`, `代理 ${overviewMetrics?.network || '检测中'}${overviewMetrics?.networkDelayMs != null ? ` · ${overviewMetrics.networkDelayMs}ms` : ''}`]
   }, {
     title: '内存与连接',
     lines: [`VPNCTL ${formatMemory(overviewMetrics?.vpnctlMemory)}`, `Mihomo ${formatMemory(overviewMetrics?.mihomoMemory)} · 连接 ${overviewMetrics?.connections ?? '--'}`]
@@ -1407,7 +1448,7 @@ export default function App({ initialSection = 'overview', initialCliApp = 'code
   const pageContent = {
     overview: ['总览', `初始化状态：${state.snapshot.status.initialized ? '已完成' : '未完成'}`, `mihomo：${state.snapshot.status.apiAlive ? '在线' : '离线'}`, `当前激活订阅：${activeSubscription?.displayName || '无'}`, `代理模式：${state.snapshot.status.proxyMode}`, `默认策略组：${state.snapshot.status.defaultGroup}`, `下一步：${(state.snapshot.status.nextSteps || []).join(' | ')}`, '', ...overviewGuide, '', '动作：Enter 执行下一步 | i 初始化 | a 添加订阅 | y 同步 | s 启动'],
     runtime: ['运行状态', `接口：${state.snapshot.status.apiAlive ? '在线' : '离线'}`, `进程 PID：${state.snapshot.status.pid || '无'}`, `当前节点：${state.snapshot.currentNodeLabel || '无'}`, `运行锁数量：${(state.snapshot.status.runtimeLocks || []).length}`, `日志文件：${state.snapshot.status.logFile}`, '', '动作：s 启动 | k 停止 | r 刷新 | l 显示日志路径'],
-    ports: ['端口与环境', `代理模式：${state.snapshot.status.proxyMode}`, ...getProxyEndpointSummary(state.snapshot.status), getPortSummary(state.snapshot.status), `端口来源：${state.snapshot.status.portSource}`, '', '动作：p 修改代理模式与端口'],
+    ports: ['端口与环境', `代理模式：${state.snapshot.status.proxyMode}`, ...getProxyEndpointSummary(state.snapshot.status), getPortSummary(state.snapshot.status), `端口来源：${state.snapshot.status.portSource}`, `IPv6：${createConfig().ipv6 === true ? '开启' : createConfig().ipv6 === false ? '关闭' : '内核默认'}`, '', '动作：p 修改代理模式与端口 | 6 开启或关闭 IPv6'],
     latency: ['测速目标', `当前目标：${selectedLatencyTarget.label}`, `测速 URL：${selectedLatencyTarget.url}`, `${selectedLatencyTarget.description}`, '', '说明：节点延迟结果取决于这里选择的测速目标。', '动作：上下选择目标 | Enter 应用 | 前往节点页按 d 测速'],
     shell: ['Shell 集成', `已安装：${state.snapshot.status.shellIntegration?.installed ? '是' : '否'}`, `bashrc 路径：${state.snapshot.status.shellIntegration?.bashrcPath || '无'}`, `Codex 封装：${state.snapshot.status.shellIntegration?.codexWrapper ? '已启用' : '未启用'}`, `Claude 封装：${state.snapshot.status.shellIntegration?.claudeWrapper ? '已启用' : '未启用'}`, `同账号复用：${formatSessionReuseState(state.snapshot.status.sessionReuse?.state)}`, `${state.snapshot.status.sessionReuse?.label || '建议在服务器安装 bash Shell 集成，以复用同账号会话的 VPN。'}`, '', 'CLI 管理：双标签诊断、确认式 Daemon 修复及 Claude 代理同步。', '已有后台进程不会自动继承新端口，也不会被自动重启。', '', ...shellGuide, '', '动作：Enter 或 b 安装 bashrc 配置块 | n 确认卸载 bashrc 配置块'],
     logs: ['日志与诊断', `日志文件：${state.snapshot.status.logFile}`, `主题：${state.snapshot.status.theme}`, `代理模式：${state.snapshot.status.proxyMode}`, `端口来源：${state.snapshot.status.portSource}`, `迁移状态：${state.snapshot.status.migration.migrationStatus}`, '', '动作：r 刷新 | l 显示日志路径']

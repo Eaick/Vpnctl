@@ -92,7 +92,7 @@ test_vpnctl() {
       ;;
     integrations)
       label='Codex Daemon 与 Claude 代理集成'
-      files=(integration-runtime integration-codex integration-codex-account integration-claude integration-entry integration-shell claude-providers claude-bridge claude-management)
+      files=(integration-runtime integration-codex integration-codex-account integration-claude integration-entry integration-shell claude-providers claude-bridge claude-management next-version)
       ;;
     shell) label='Shell 集成与管理脚本'; files=(shell script-menu) ;;
     entry) label='构建入口检查' ;;

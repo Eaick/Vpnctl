@@ -20,7 +20,7 @@ const report = {
 
 test('CLI management has two app-specific action lists with diagnostic and confirmation boundaries', () => {
   assert.ok(getCliActions('codex').some((action) => action.id === 'repair'));
-  assert.match(getCliActions('codex').find(action => action.id === 'repair').label, /修复 Codex Daemon/);
+  assert.match(getCliActions('codex').find(action => action.id === 'repair').label, /修复连接问题/);
   assert.match(getCliActions('codex').find(action => action.id === 'repair').label, /确认/);
   assert.ok(getCliActions('codex').some((action) => action.id === 'account'));
   for (const app of ['codex', 'claude']) assert.ok(getCliActions(app).every(action => !['standalone', 'launch'].includes(action.id)));
@@ -38,7 +38,7 @@ test('CLI management separates diagnostics and actions with a plain divider inst
     assert.ok(!panel.lines.some(line => line.text.includes('操作 ·')));
     assert.ok(panel.lines.slice(divider + 1).some(line => line.tone === 'selected'), 'selected action must appear below the divider');
     assert.ok(panel.lines.slice(0, divider).every(line => line.tone !== 'selected'));
-    if (app === 'codex') assert.ok(panel.lines.slice(divider + 1).some(line => line.text.includes('修复 Codex Daemon')));
+    if (app === 'codex') assert.ok(panel.lines.slice(divider + 1).some(line => line.text.includes('修复连接问题')));
   }
 });
 
@@ -170,13 +170,29 @@ test('actual CLI page switches apps, opens a cancel-first preview and fits commo
         await key('\t');
         await waitFor(() => frame().includes('[1 Codex]'));
         for (let i = 0; i < getCliActions('codex').findIndex(action => action.id === 'repair'); i++) await key('\x1b[B');
-        await waitFor(() => frame().includes('修复 Codex Daemon'));
+        await waitFor(() => frame().includes('修复连接问题'));
         assert.ok(!frame().includes('操作 ·'));
         await key('\r');
         await waitFor(() => frame().includes('Codex Daemon 修复确认'));
         assert.ok(frame().includes('[取消]'));
         await key('\x1b');
         await waitFor(() => frame().includes('[1 Codex]'));
+        for (let i = getCliActions('codex').findIndex(action => action.id === 'repair'); i < getCliActions('codex').findIndex(action => action.id === 'providers'); i++) await key('\x1b[B');
+        await key('\r');
+        await waitFor(() => frame().includes('Codex · API 账号管理'));
+        await key('a');
+        await waitFor(() => frame().includes('新增 Codex API 账号'));
+        await key(`Codex${width}`); await key('\t');
+        await key('https://api.example.com/v1'); await key('\t');
+        await key('codex-ui-fixture-key'); await key('\t');
+        await key('model-fixture'); await key('\r');
+        await waitFor(() => frame().includes('[取消]'));
+        await key('\t'); await key('\r');
+        await waitFor(() => frame().includes('操作结束'));
+        await key('\x1b');
+        await waitFor(() => frame().includes(`Codex${width}`) && frame().includes('JSON 预览'));
+        assert.ok(!chunks.join('').includes('codex-ui-fixture-key'));
+        await key('\x1b');
         await key('2');
         await waitFor(() => frame().includes('[2 Claude Code]'));
         await key('\x1b[B'); await key('\x1b[B'); await key('\x1b[B');

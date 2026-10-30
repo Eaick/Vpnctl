@@ -52,11 +52,12 @@ test('Claude wrapper uses the active managed API account and the current dynamic
     const apply = await prepareClaudeProviderAction('apply', { env, id: saved.id, context });
     await executeClaudeProviderAction(apply, { env, confirmed: true, context });
     await launchIntegratedApplication('claude', [], { context: { ...context, env }, spawnApp: (_command, _args, options) => {
-      assert.equal(options.env.ANTHROPIC_BASE_URL, 'https://active.example.com');
-      assert.equal(options.env.ANTHROPIC_API_KEY, 'active-fixture');
-      assert.equal(options.env.ANTHROPIC_AUTH_TOKEN, undefined);
+      assert.match(options.env.ANTHROPIC_BASE_URL, /^http:\/\/127\.0\.0\.1:\d+$/);
+      assert.equal(options.env.ANTHROPIC_API_KEY, undefined);
+      assert.match(options.env.ANTHROPIC_AUTH_TOKEN, /^[a-f0-9]{64}$/);
       assert.equal(options.env.HTTPS_PROXY, 'http://127.0.0.1:34567');
-      assert.equal(options.env.NO_PROXY, '.internal');
+      assert.ok(options.env.NO_PROXY.includes('.internal'));
+      assert.ok(options.env.NO_PROXY.includes('127.0.0.1'));
       const child = new EventEmitter(); setTimeout(() => child.emit('close', 0), 0); return child;
     } });
   } finally { await fs.rm(home, { recursive: true, force: true }); }

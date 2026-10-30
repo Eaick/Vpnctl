@@ -129,10 +129,11 @@ export async function probeApplicationService(app, context, { run = runCli } = {
   const url = app === 'claude' ? 'https://api.anthropic.com/' : 'https://auth.openai.com/';
   const quote = (value) => `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\r\n]/g, '')}"`;
   // 代理凭据通过 stdin 传递，不放进可被进程列表读取的参数。
-  const input = `proxy = ${quote(context.httpProxy)}\nnoproxy = ""\nurl = ${quote(url)}\nconnect-timeout = 5\nmax-time = 12\nsilent\nshow-error\noutput = ${quote(process.platform === 'win32' ? 'NUL' : '/dev/null')}\nwrite-out = "%{http_code}"\n`;
+  const routing = context.proxyEnabled === false ? 'noproxy = "*"\n' : `proxy = ${quote(context.httpProxy)}\nnoproxy = ""\n`;
+  const input = `${routing}url = ${quote(url)}\nconnect-timeout = 5\nmax-time = 12\nsilent\nshow-error\noutput = ${quote(process.platform === 'win32' ? 'NUL' : '/dev/null')}\nwrite-out = "%{http_code}"\n`;
   const result = await run('curl', ['--config', '-'], { env: context.env, timeoutMs: 15000, input });
   const status = /^\d{3}$/.test(result.stdout?.trim()) ? Number(result.stdout.trim()) : 0;
   if (result.missing) return { id: 'network', status: 'unknown', label: '服务网络未检测', detail: '缺少 curl；其他诊断不受影响' };
   if (!result.ok || !status) return { id: 'network', status: 'error', label: '服务连接失败', detail: redactText(result.stderr || '未收到有效 HTTP 响应').slice(0, 240) };
-  return { id: 'network', status: status === 403 || status >= 500 ? 'warn' : 'ok', label: `服务已响应 HTTP ${status}`, detail: '本次强制经 VPNCTL 测试；HTTP 响应不代表登录、额度或模型推理成功' };
+  return { id: 'network', status: status === 403 || status >= 500 ? 'warn' : 'ok', label: `服务已响应 HTTP ${status}`, detail: `${context.proxyEnabled === false ? '本次直接联网测试' : '本次通过 VPNCTL 测试'}；HTTP 响应不代表登录、额度或模型推理成功` };
 }

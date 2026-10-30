@@ -5,12 +5,12 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createConfig } from '../src/lib/config.mjs';
-import { buildManagedBashrcBlock, installShellIntegration, uninstallShellIntegration, detectShellIntegration } from '../src/lib/shell.mjs';
+import { buildManagedBashrcBlock, buildApplicationShellHook, installShellIntegration, uninstallShellIntegration, detectShellIntegration } from '../src/lib/shell.mjs';
 import { syncClaudeSettings } from '../src/lib/integrations/claude.mjs';
 import { prepareClaudeProviderAction, executeClaudeProviderAction, listClaudeProviders } from '../src/lib/integrations/claude-providers.mjs';
 
 test('application wrappers delegate arguments without an eval of user input or background restarts', () => {
-  const block = buildManagedBashrcBlock();
+  const block = buildApplicationShellHook();
   assert.match(block, /command vpnctl integrate codex run -- "\$@"/);
   assert.match(block, /command vpnctl integrate claude run -- "\$@"/);
   assert.match(block, /alias claudevpn='vpnctl-claude'/);
@@ -24,7 +24,7 @@ test('application wrappers delegate arguments without an eval of user input or b
 const bash = process.env.VPNCTL_TEST_BASH || 'bash';
 const bashAvailable = spawnSync(bash, ['--version'], { encoding: 'utf8', timeout: 5000 }).status === 0;
 test('generated Bash wrappers pass syntax validation', { skip: !bashAvailable }, () => {
-  const result = spawnSync(bash, ['-n'], { input: buildManagedBashrcBlock(), encoding: 'utf8', timeout: 5000 });
+  const result = spawnSync(bash, ['-n'], { input: `${buildManagedBashrcBlock()}\n${buildApplicationShellHook()}`, encoding: 'utf8', timeout: 5000 });
   assert.equal(result.status, 0, result.stderr);
 });
 

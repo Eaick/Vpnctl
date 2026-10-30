@@ -4,6 +4,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import YAML from 'yaml';
 import { createConfig } from './config.mjs';
 import { ensureRuntimeDirectories } from './install.mjs';
+import { parseSubscriptionUserinfo } from './subscription-info.mjs';
+import { hostPort } from './endpoints.mjs';
 
 const PROTOCOL_ALIASES = {
   ss: 'shadowsocks',
@@ -428,7 +430,8 @@ export async function writeManagedConfig(currentConfig = createConfig()) {
     mode: 'rule',
     'allow-lan': false,
     'log-level': 'info',
-    'external-controller': `${currentConfig.controllerHost}:${Number(new URL(currentConfig.mihomoApi).port)}`,
+    'external-controller': hostPort(currentConfig.controllerHost, Number(new URL(currentConfig.mihomoApi).port)),
+    ...(typeof currentConfig.ipv6 === 'boolean' ? { ipv6: currentConfig.ipv6 } : {}),
     secret: currentConfig.mihomoSecret,
     profile: {
       'store-selected': true
@@ -460,7 +463,7 @@ async function loadRemoteSubscriptionContent(subscription) {
     throw new Error(`拉取订阅失败：${res.status} ${res.statusText}`);
   }
 
-  return res.text();
+  return { content: await res.text(), subscriptionInfo: parseSubscriptionUserinfo(res.headers?.get('subscription-userinfo')) };
 }
 
 async function loadLocalSubscriptionContent(subscription) {
@@ -538,9 +541,10 @@ export async function editSubscription(id, { url, file, name } = {}, currentConf
     if (duplicate) throw new Error(`订阅来源已存在：${duplicate.displayName} (${duplicate.id})`);
 
     const candidate = { ...subscription, type, source };
-    const content = type === 'remote'
+    const loaded = type === 'remote'
       ? await loadRemoteSubscriptionContent(candidate)
       : await loadLocalSubscriptionContent(candidate);
+    const content = type === 'remote' ? loaded.content : loaded;
     const nodes = parseNodes(content);
     if (!nodes.length) throw new Error('新订阅来源未包含可识别的节点，原订阅未修改');
     if (type === 'local') {
@@ -548,6 +552,7 @@ export async function editSubscription(id, { url, file, name } = {}, currentConf
       if (duplicateContent) throw new Error(`本地订阅内容已存在：${duplicateContent.displayName} (${duplicateContent.id})`);
     }
     await storeSubscriptionContent(candidate, content, nodes);
+    candidate.subscriptionInfo = type === 'remote' ? loaded.subscriptionInfo : null;
     Object.assign(subscription, candidate);
   }
 
@@ -571,9 +576,10 @@ export async function syncSubscriptions({ id } = {}, currentConfig = createConfi
 
   for (const subscription of targetItems) {
     try {
-      const content = subscription.type === 'remote'
+      const loaded = subscription.type === 'remote'
         ? await loadRemoteSubscriptionContent(subscription)
         : await loadLocalSubscriptionContent(subscription);
+      const content = subscription.type === 'remote' ? loaded.content : loaded;
 
       const nodes = parseNodes(content);
       if (nodes.length === 0) {
@@ -581,6 +587,8 @@ export async function syncSubscriptions({ id } = {}, currentConfig = createConfi
       }
 
       await storeSubscriptionContent(subscription, content, nodes);
+      subscription.subscriptionInfo = subscription.type !== 'remote' ? null : loaded.subscriptionInfo
+        || (subscription.subscriptionInfo ? { ...subscription.subscriptionInfo, stale: true } : null);
       results.push({
         id: subscription.id,
         displayName: subscription.displayName,

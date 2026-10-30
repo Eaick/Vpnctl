@@ -37,6 +37,17 @@ async function main() {
   }
   const rest = args.slice(1);
   const flags = parseFlags(rest);
+  if (command === 'config' && rest[0] === 'set-ipv6') {
+    if (!['on', 'off'].includes(flags.mode)) throw new Error('用法：vpnctl config set-ipv6 --mode on|off --yes');
+    const { setIpv6Enabled } = await import('./lib/network-settings.mjs');
+    console.log((await setIpv6Enabled(flags.mode === 'on', { confirmed: flags.yes === true })).message);
+    return;
+  }
+  if (command === 'shell' && rest[0] === 'hook') {
+    const { buildApplicationShellHook } = await import('./lib/shell.mjs');
+    console.log(buildApplicationShellHook());
+    return;
+  }
   if (flags.theme) process.env.VPNCTL_THEME = flags.theme;
 
   if (command === 'dev') {

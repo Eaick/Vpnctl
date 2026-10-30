@@ -16,6 +16,10 @@ logs/
 .codex/
 .vpnctl-providers.json
 .vpnctl-proxy.json
+.vpnctl-requests.json
+.vpnctl-providers.lock
+.vpnctl-proxy.lock
+.vpnctl-requests.lock
 .vpnctl-api-settings.*.bak
 .bashrc
 .bashrc.vpnctl-*

@@ -1,3 +1,4 @@
+import { subscriptionInfoLines } from './subscription-info.mjs';
 const NOTICE_PATTERNS = [
   /^剩余(?:流量)?\s*[:：]?\s*\d+(?:\.\d+)?\s*(?:[KMGT]i?B|[KMGT]|字节)/i,
   /^(?:套餐到期|到期时间|距离下次重置剩余)\s*[:：]?\s*\d/,
@@ -23,5 +24,5 @@ export function getNodeNotices(provider, subscriptions = []) {
   const notices = [...(subscription?.nodes || []), ...(provider.nodes || [])]
     .filter(isNodeNotice)
     .map((node) => String(node.label ?? node.name).trim());
-  return [...new Set(notices)];
+  return [...subscriptionInfoLines(subscription), ...new Set(notices)];
 }

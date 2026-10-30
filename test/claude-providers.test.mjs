@@ -188,13 +188,14 @@ test('settings import preserves 1M consent and does not read browser login crede
   assert.ok(!JSON.stringify(oauth).includes('oauth-fixture'));
 }));
 
-test('unfinished conversion never changes Claude settings and stale previews are rejected', async () => fixture(async ({ env, dir }) => {
+test('conversion account activation preserves external settings and stale previews are rejected', async () => fixture(async ({ env, dir }) => {
   const input = { ...account, protocol: 'openai-chat' };
   const plan = await prepareClaudeProviderAction('save', { env, input });
   const saved = await executeClaudeProviderAction(plan, { env, input, confirmed: true });
   const apply = await prepareClaudeProviderAction('apply', { env, id: saved.id, context: { available: true } });
-  assert.equal(apply.allowed, false);
-  await assert.rejects(executeClaudeProviderAction(apply, { env, context: { available: true }, confirmed: true }), /条件|未接通/);
+  assert.equal(apply.allowed, true);
+  await executeClaudeProviderAction(apply, { env, context: { available: true }, confirmed: true });
+  assert.equal((await listClaudeProviders({ env })).activeId, saved.id);
   await assert.rejects(fs.access(path.join(dir, 'settings.json')));
   const stale = await prepareClaudeProviderAction('delete', { env, id: saved.id });
   await fs.writeFile(path.join(dir, 'settings.json'), '{}');

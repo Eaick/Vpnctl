@@ -50,7 +50,7 @@
     example: 'vpnctl shell install --bashrc'
   },
   {
-    command: 'vpnctl integrate codex doctor / repair',
+    command: 'vpnctl integrate codex doctor / repair / accounts / proxy',
     meaning: '诊断 Codex CLI、Daemon 与代理；--account 只读读取当前账号、额度和重置次数，--network 检查 OpenAI；repair 先预览确认。',
     example: 'vpnctl integrate codex doctor --account --network'
   },
@@ -90,7 +90,7 @@ const TUI_HELP_SECTIONS = [
       '账号查看：左55%列表、右45%脱敏JSON；PgUp/PgDn滚动预览，无账号显示“无阅览”',
       '账号表单：Tab/上下切字段，左右切选项，Ctrl+U 清空；密钥不回显，编辑留空保留',
       '每个 Claude 模型可独立声明 1M；追加 [1m] 前须确认上游支持，不自动验证容量',
-      '原生 Anthropic 账号可激活；OpenAI Chat/Responses 转换未接通，只能保存',
+      'Claude 原生与 OpenAI Chat/Responses 账号可切换；转换和监控通过 VPNCTL 启动入口生效',
       'Claude：同步代理后，已运行 Supervisor 的环境仍未验证'
     ]
   },

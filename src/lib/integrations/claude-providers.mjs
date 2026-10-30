@@ -72,8 +72,7 @@ export async function readClaudeProviderStore({ env = process.env } = {}) {
     value.applied.profile = normalizeClaudeProvider(value.applied.profile, null, value.activeId);
     if (digest(encode(value.applied.profile)) !== value.applied.revision) fail('已应用账号快照不一致');
     if (Object.keys(value.applied.target).some(key => !CLAUDE_PROVIDER_KEYS.includes(key) || (value.applied.target[key] !== null && typeof value.applied.target[key] !== 'string'))) fail('已应用配置字段无效');
-    if (value.applied.profile.protocol !== 'anthropic') fail('尚不支持已激活的 OpenAI 转换账号');
-    const expected = targetFor(value.applied.profile);
+    const expected = value.applied.profile.protocol === 'anthropic' ? targetFor(value.applied.profile) : {};
     if (Object.keys(value.applied.target).length !== Object.keys(expected).length || Object.entries(expected).some(([key, entry]) => value.applied.target[key] !== entry)) fail('已应用 API 字段与账号不一致');
   }
   if (value.activeId && !value.applied) fail('已激活账号缺少应用快照');
@@ -175,8 +174,7 @@ export async function prepareClaudeProviderAction(action, { env = process.env, i
     if (!context?.available) { plan.allowed = false; plan.warnings.push('请先启动本账户 VPNCTL 代理，未应用账号'); }
     plan.steps.push({ label: `应用 ${profile.name}（${profile.protocol}）并备份 settings.json` });
     if (profile.protocol !== 'anthropic') {
-      plan.allowed = false;
-      plan.warnings.push('OpenAI 协议转换服务尚未接通；此账号只能保存，不能激活，不会写入不可用地址。');
+      plan.warnings.push('此账号通过 VPNCTL 启动入口使用本地协议转换；已有 Claude 会话仍使用原账号。');
     }
     plan.warnings.push('将替换 BASE_URL、认证、模型及云提供方选择字段；网络代理由 VPNCTL 动态解析。');
     if (settings.value.apiKeyHelper) plan.warnings.push('检测到 apiKeyHelper，未修改；请检查它是否与新凭据冲突。');
@@ -253,7 +251,6 @@ export async function executeClaudeProviderAction(plan, { env = process.env, inp
   if (plan.requires1mConfirmation && acknowledge1m !== true) fail('请明确确认模型及服务商支持 1M 上下文，未修改配置');
   if (plan.action === 'apply') {
     if (!context?.available) fail('当前 VPNCTL 代理不可用，未应用账号');
-    if (plan.profile.protocol !== 'anthropic') fail('OpenAI 协议转换尚未接通，未应用账号');
   }
   const where = location(env);
   return withClaudeLock(where, fs, async () => {
@@ -291,9 +288,10 @@ export async function executeClaudeProviderAction(plan, { env = process.env, inp
       const profile = next.profiles.find(profile => profile.id === plan.id);
       if (!profile || digest(encode(profile)) !== plan.payloadDigest) fail('账号已变化，请重新预览');
       require1mAcknowledgement([profile], acknowledge1m);
-      if (profile.protocol !== 'anthropic') fail('OpenAI 协议转换尚未接通，未应用账号');
-      const target = targetFor(profile);
-      nextSettings = structuredClone(settings.value); nextSettings.env ||= {};
+      const target = profile.protocol === 'anthropic' ? targetFor(profile) : {};
+      nextSettings = profile.protocol === 'anthropic' ? structuredClone(settings.value)
+        : Object.keys(next.ownership).length ? restoreOwnedFields(next, settings.value) : undefined;
+      if (nextSettings) nextSettings.env ||= {};
       for (const [key, value] of Object.entries(target)) {
         const current = nextSettings.env[key];
         if (current !== undefined && typeof current !== 'string') fail('已有 API 环境变量不是字符串，未覆盖');
@@ -325,9 +323,6 @@ export async function restoreClaudeProviders({ env = process.env, confirmed = fa
 export async function claudeProviderEnvironment({ env = process.env } = {}) {
   const { value } = await readClaudeProviderStore({ env });
   if (!value.applied) return { ...env };
-  if (value.applied.profile.protocol !== 'anthropic') {
-    fail('OpenAI 转换服务尚未接通，请在 CLI 管理应用原生 Anthropic 账号');
-  }
   const result = { ...env };
   for (const [key, entry] of Object.entries(value.applied.target)) { if (entry === null) delete result[key]; else result[key] = entry; }
   return result;

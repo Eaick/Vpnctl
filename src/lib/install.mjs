@@ -49,6 +49,7 @@ function buildManagedState(currentConfig, portPlan, asset = null) {
     platform: process.platform,
     arch: process.arch,
     proxyMode: currentConfig.proxyMode,
+    ...(typeof currentConfig.ipv6 === 'boolean' ? { ipv6: currentConfig.ipv6 } : {}),
     controllerHost: portPlan.api.host,
     proxyHost: portPlan.mode === 'mix' ? portPlan.mixed.host : portPlan.http.host,
     httpHost: portPlan.mode === 'mix' ? portPlan.mixed.host : portPlan.http.host,

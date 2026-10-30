@@ -21,17 +21,21 @@ function wrapLines(lines, width) {
 
 export function getCliActions(app) {
   if (app === 'codex') return [
-    { id: 'doctor', label: '检测 CLI 与 Daemon 版本、代理环境' },
-    { id: 'network', label: '检测 OpenAI 连通性（不发送登录凭据）' },
-    { id: 'account', label: '刷新账号与额度（官方只读查询）' },
-    { id: 'repair', label: '修复 Codex Daemon（版本/代理，需确认）' }
+    { id: 'doctor', label: '检查程序与联网设置' },
+    { id: 'network', label: '测试能否连接 OpenAI' },
+    { id: 'account', label: '查看账号与使用额度' },
+    { id: 'repair', label: '修复连接问题（需确认）' },
+    { id: 'proxy', label: '切换联网方式（VPNCTL / 直接联网）' },
+    { id: 'providers', label: '管理 API 账号与模型' }
   ];
   return [
-    { id: 'doctor', label: '执行本地诊断' },
-    { id: 'network', label: '检测服务网络（不发送登录凭据）' },
-    { id: 'install', label: '安装或更新终端代理包装' },
-    { id: 'sync', label: '预览用户级代理配置同步' },
-    { id: 'providers', label: 'API 账号管理（增删改查 / 切换 / 模型）' }
+    { id: 'doctor', label: '检查程序与联网设置' },
+    { id: 'network', label: '测试能否连接服务' },
+    { id: 'install', label: '安装终端集成' },
+    { id: 'sync', label: '同步后台联网设置（需确认）' },
+    { id: 'providers', label: '管理账号与模型' },
+    { id: 'proxy', label: '切换联网方式（VPNCTL / 直接联网）' },
+    { id: 'requests', label: '查看最近请求与用量' }
   ];
 }
 
@@ -138,7 +142,7 @@ export function buildCliManagementLines({ app = 'codex', report, loading = false
       `当前 ${report?.providers?.active?.name || '未选择 VPNCTL 账号'}`,
       `模型 ${report?.providers?.active?.model || 'Claude 默认'}`,
       ...(report?.providers?.pending ? ['账号有修改尚未应用'] : []),
-      '原生可切换；OpenAI 转换尚未接通']
+      '通过 VPNCTL 入口应用账号并记录请求']
   }, {
     title: 'Claude 后台代理',
     lines: [`持久配置 ${SETTINGS[report?.settings?.status] || '未验证'}`, report?.supervisor?.label || 'Supervisor 生效状态未验证，禁止自动重启']

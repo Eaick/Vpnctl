@@ -1,7 +1,7 @@
 import { getVisibleWindow, padText } from './tui-layout.mjs';
 import stringWidth from 'string-width';
 
-export const CLAUDE_PROTOCOL_LABELS = { anthropic: 'Anthropic Messages（原生）', 'openai-chat': 'OpenAI Chat（转换未接通）', 'openai-responses': 'OpenAI Responses（转换未接通）' };
+export const CLAUDE_PROTOCOL_LABELS = { anthropic: 'Claude 原生接口', 'openai-chat': 'OpenAI Chat（自动转换）', 'openai-responses': 'OpenAI Responses（自动转换）' };
 const field = (key, label, value, extra = {}) => ({ key, label, value: value || '', ...extra });
 const modelRoles = [['model', '默认实际模型', 'ANTHROPIC_MODEL'], ['sonnet', 'Sonnet → 实际模型', 'ANTHROPIC_DEFAULT_SONNET_MODEL'], ['opus', 'Opus → 实际模型', 'ANTHROPIC_DEFAULT_OPUS_MODEL'], ['haiku', 'Haiku → 实际模型', 'ANTHROPIC_DEFAULT_HAIKU_MODEL'], ['subagent', 'Subagent → 实际模型', 'CLAUDE_CODE_SUBAGENT_MODEL']];
 const contextSuffix = /(?:\[1m\])+$/i;
@@ -23,16 +23,26 @@ export function createClaudeProviderEditor(profile = {}) {
     field('name', '供应商名称 *', profile.name, { group: '基本配置', hint: '自定义名称；每套 API 账号使用不同名称' }),
     field('baseUrl', '请求根地址 *', profile.baseUrl, { hint: 'HTTPS 根地址；不要填 /messages 或 /chat/completions 完整路径' }),
     field('secret', 'API Key / Bearer Token *', '', { secret: true, hint: profile.id ? '留空保留原密钥；密钥不会回显' : '密钥不会回显；仅写入本账户私有配置文件' }),
-    field('protocol', '上游格式', profile.protocol || 'anthropic', { group: '协议与认证', options: Object.keys(CLAUDE_PROTOCOL_LABELS), labels: CLAUDE_PROTOCOL_LABELS, hint: '原生可激活；OpenAI 格式目前只能保存，不能激活' }),
+    field('protocol', '接口类型', profile.protocol || 'anthropic', { group: '接口设置', options: Object.keys(CLAUDE_PROTOCOL_LABELS), labels: CLAUDE_PROTOCOL_LABELS, hint: '按服务商说明选择；OpenAI 接口由本地网关转换，需通过 VPNCTL 入口启动 Claude' }),
     field('authType', '认证字段', profile.authType || 'bearer', { options: ['bearer', 'api-key'], labels: { bearer: 'ANTHROPIC_AUTH_TOKEN（Bearer）', 'api-key': 'ANTHROPIC_API_KEY（x-api-key）' }, hint: '按 API 服务商要求选择；OpenAI 格式仅支持 Bearer' }),
     ...modelFields(profile),
     field('effort', '思考强度', profile.effort, { group: '可选参数', options: ['', 'low', 'medium', 'high', 'max'], hint: '仅在上游模型支持时设置，默认不覆盖' }),
-    field('tokenField', 'OpenAI 输出长度字段', profile.tokenField || 'max_tokens', { options: ['max_tokens', 'max_completion_tokens'], hint: '仅影响未来 OpenAI Chat 转换；原生忽略' })
+    field('tokenField', 'OpenAI 输出长度字段', profile.tokenField || 'max_tokens', { options: ['max_tokens', 'max_completion_tokens'], hint: '仅影响 OpenAI Chat 转换；按服务商要求设置，原生忽略' })
   ] };
+}
+
+export function createCodexProviderEditor(profile = {}) {
+  const modal = createClaudeProviderEditor(profile);
+  modal.app = 'codex';
+  modal.fields = modal.fields.filter(item => ['name', 'baseUrl', 'secret', 'model'].includes(item.key));
+  modal.fields.find(item => item.key === 'model').label = '模型名称 *';
+  modal.fields.find(item => item.key === 'model').hint = '填写 API 服务商提供的模型名称。';
+  return modal;
 }
 
 export function readClaudeProviderInput(modal) {
   const input = { ...(modal.id ? { id: modal.id } : {}), ...Object.fromEntries(modal.fields.map(item => [item.key, item.value])) };
+  if (modal.app === 'codex') return input;
   for (const [key, label] of modelRoles) {
     const base = input[key].trim().replace(contextSuffix, '');
     if (input[`${key}1m`] === 'on' && !base) throw new Error(`请先填写${label}的模型 ID，再声明 1M 上下文`);
@@ -44,6 +54,7 @@ export function readClaudeProviderInput(modal) {
 
 export function createClaudeProviderPreview(profile) {
   if (!profile) return null;
+  if (profile.protocol === 'codex') return { model: profile.model, base_url: profile.baseUrl, wire_api: 'responses', api_key: '[已隐藏]' };
   if (profile.protocol && profile.protocol !== 'anthropic') {
     return { protocol: profile.protocol, baseUrl: profile.baseUrl, authType: profile.authType || 'bearer', secret: '[已隐藏]',
       ...Object.fromEntries(modelRoles.filter(([key]) => profile[key]).map(([key]) => [key, profile[key]])) };
@@ -82,7 +93,7 @@ export function getClaudeProviderPreviewLayout(modal, width, height) {
   const pageHeight = Math.max(0, h - 3);
   const maxScroll = pageHeight ? Math.max(0, content.length - pageHeight) : 0;
   const offset = Math.max(0, Math.min(modal.previewScroll || 0, maxScroll));
-  const title = profile?.protocol && profile.protocol !== 'anthropic' ? 'JSON 预览（未接通，仅保存）' : 'JSON 预览（脱敏，只读）';
+  const title = 'JSON 预览（脱敏，只读）';
   const lines = [{ text: padText(title, rightWidth), tone: 'accent' }, ...content.slice(offset, offset + pageHeight).map(text => ({ text: padText(text, rightWidth), tone: 'normal' }))];
   return { leftWidth, rightWidth, dividerWidth, lines, pageHeight, maxScroll };
 }
@@ -94,10 +105,11 @@ export function buildClaudeProviderLines(modal, width, height) {
   const bodyWidth = preview?.leftWidth || w;
   const bodyLine = (text, tone = 'normal') => line(text, tone, bodyWidth);
   const bodyLines = (text, tone = 'normal') => wrapPreview(String(text).replace(/[\x00-\x1f\x7f]/g, ' '), bodyWidth).map(row => bodyLine(row, tone));
-  const title = modal.type === 'claude-editor' ? `${modal.id ? '编辑' : '新增'} Claude API 账号 · 仅保存，不自动切换` : 'Claude Code · API 账号管理';
+  const appName = modal.app === 'codex' ? 'Codex' : 'Claude';
+  const title = modal.type === 'claude-editor' ? `${modal.id ? '编辑' : '新增'} ${appName} API 账号 · 仅保存，不自动切换` : `${appName === 'Claude' ? 'Claude Code' : appName} · API 账号管理`;
   const footer = modal.type === 'claude-editor'
     ? 'Tab/↑↓ 字段 · ←→ 选项 · Ctrl+U 清空 · Enter 保存预览 · Esc 返回'
-    : '↑↓账号 a增 e改 x删 i读取配置 Enter应用 b恢复 PgUp/Dn预览 Esc返回';
+    : `↑↓账号 a增 e改 x删 ${modal.app === 'codex' ? '' : 'i读取配置 '}Enter应用 b恢复 PgUp/Dn预览 Esc返回`;
   const body = [];
   let focus = 0;
   if (modal.type === 'claude-editor') {
@@ -122,7 +134,7 @@ export function buildClaudeProviderLines(modal, width, height) {
       const selected = index === modal.selected;
       if (selected) focus = body.length;
       body.push(...bodyLines(`${selected ? '►' : ' '} ${profile.active ? '[当前]' : '[已保存]'} ${profile.name}${profile.pending ? '（修改未应用）' : ''}`, selected ? 'selected' : 'normal'));
-      body.push(...bodyLines(`  ${CLAUDE_PROTOCOL_LABELS[profile.protocol]}${profile.protocol !== 'anthropic' ? ' · 不可激活' : ''}`, 'dim'));
+      body.push(...bodyLines(`  ${profile.protocol === 'codex' ? 'OpenAI Responses' : CLAUDE_PROTOCOL_LABELS[profile.protocol]}`, 'dim'));
       body.push(...bodyLines(`  ${profile.baseUrl} · 模型 ${profile.model || 'Claude 默认'}`, 'dim'));
     }
     if (modal.listing?.active) body.push(...bodyLines(`已应用：${modal.listing.active.name}；请在新 Claude 会话中使用。`, 'accent'));

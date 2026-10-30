@@ -5,6 +5,10 @@ import { inspectIntegration, prepareIntegrationAction, executeIntegrationAction,
 import { resolveApplicationProxy, redactText } from './lib/integrations/runtime.mjs';
 import { formatCodexQuotaLines } from './lib/cli-management.mjs';
 import { claudeProviderEnvironment } from './lib/integrations/claude-providers.mjs';
+import { applicationPaths, resolveApplicationContext } from './lib/integrations/app-policy.mjs';
+import path from 'node:path';
+import { listCodexProviders, editCodexProvider, codexProviderLaunch, isolateCodexApiLaunch } from './lib/integrations/codex-providers.mjs';
+import { prepareClaudeLaunch } from './lib/integrations/claude-launch.mjs';
 
 const STATUS = { ok: '正常', warn: '警告', error: '失败', unknown: '未验证', unsupported: '不支持' };
 
@@ -21,7 +25,7 @@ export function formatIntegrationReport(report) {
 export function formatActionPreview(prepared, { confirmation = false } = {}) {
   const plan = prepared.plan;
   return [
-    `${prepared.app === 'codex' ? 'Codex Daemon 修复' : prepared.action === 'provider' ? 'Claude API 账号操作' : 'Claude Code 代理同步'}${confirmation ? '确认' : '预览'}`,
+    `${prepared.action === 'proxy' ? `${prepared.app === 'codex' ? 'Codex' : 'Claude Code'} 联网方式` : prepared.app === 'codex' ? 'Codex Daemon 修复' : prepared.action === 'provider' ? 'Claude API 账号操作' : 'Claude Code 代理同步'}${confirmation ? '确认' : '预览'}`,
     ...(prepared.proxy ? [`当前代理：${prepared.proxy}`] : []),
     ...(plan.settingsPath ? [`配置文件：${plan.settingsPath}`] : []),
     ...((plan.steps || []).map((step, index) => `${index + 1}. ${step.label}`)),
@@ -42,7 +46,7 @@ async function confirmAction(message) {
 
 export async function launchIntegratedApplication(app, args = [], { context, spawnApp = spawn, inspect = inspectIntegration, resolveClaudeEnvironment = claudeProviderEnvironment, ...options } = {}) {
   validateApplication(app);
-  const current = context || await resolveApplicationProxy(options);
+  const current = context || await resolveApplicationContext(app, options);
   const informational = args.length > 0 && (['--version', '-v', '--help', '-h'].includes(args[0]) || args.includes('--help'));
   if (!current.available && !informational) throw new Error('VPNCTL 代理不可用；请启动本账户 Mihomo 后重试，未启动应用');
   if (app === 'codex' && args.length === 0) {
@@ -54,14 +58,20 @@ export async function launchIntegratedApplication(app, args = [], { context, spa
       console.error('[VPNCTL] 建议进入 CLI 管理预览修复，或使用 codex --no-daemon 独立运行；不会自动重启 Daemon。');
     }
   }
-  const applicationEnv = app === 'claude' && !informational ? await resolveClaudeEnvironment({ env: current.env }) : current.env;
-  return new Promise((resolve, reject) => {
-    const child = spawnApp(app, args, { env: applicationEnv, stdio: 'inherit', shell: false });
+  const managedClaude = app === 'claude' && !informational && resolveClaudeEnvironment === claudeProviderEnvironment
+    ? await prepareClaudeLaunch({ env: current.env, proxy: current.proxyEnabled === false ? null : current.httpProxy }) : null;
+  const applicationEnv = managedClaude?.env || (app === 'claude' && !informational ? await resolveClaudeEnvironment({ env: current.env }) : { ...current.env });
+  if (current.proxyEnabled === false) for (const key of ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy']) applicationEnv[key] = '';
+  const shimDir = applicationPaths(options.env || process.env).shimDir;
+  if (applicationEnv.PATH) applicationEnv.PATH = applicationEnv.PATH.split(path.delimiter).filter(item => path.resolve(item) !== path.resolve(shimDir)).join(path.delimiter);
+  const launch = app === 'codex' && !informational ? await isolateCodexApiLaunch(await codexProviderLaunch(args, { env: applicationEnv }), options) : { args, env: applicationEnv };
+  try { return await new Promise((resolve, reject) => {
+    const child = spawnApp(app, launch.args, { env: launch.env, stdio: 'inherit', shell: false });
     const keepParent = () => {};
     process.on('SIGINT', keepParent);
     child.once('error', (error) => { process.off('SIGINT', keepParent); reject(new Error(redactText(error.code === 'ENOENT' ? `未安装 ${app} 或不在 PATH 中` : error.message))); });
     child.once('close', (code, signal) => { process.off('SIGINT', keepParent); resolve({ code: code ?? (signal ? 130 : 1) }); });
-  });
+  }); } finally { await managedClaude?.close(); }
 }
 
 export async function runIntegrationCommand(args, flags = {}) {
@@ -71,6 +81,27 @@ export async function runIntegrationCommand(args, flags = {}) {
     return;
   }
   validateApplication(app);
+  if (app === 'codex' && action === 'accounts') {
+    const operation = rest[0] || 'list';
+    if (operation === 'list') { console.log(JSON.stringify(await listCodexProviders(), null, 2)); return; }
+    if (!flags.yes) throw new Error('账号写入需要 --yes；save 从标准输入读取 JSON，不接受命令行密钥');
+    let input;
+    if (operation === 'save') {
+      let text = '';
+      for await (const chunk of stdin) { text += chunk; if (text.length > 65536) throw new Error('输入过大'); }
+      try { input = JSON.parse(text); } catch { throw new Error('请输入有效的账号 JSON'); }
+    }
+    console.log((await editCodexProvider(operation, { input, id: flags.id, confirmed: true })).message);
+    return;
+  }
+  if (action === 'proxy') {
+    if (!['on', 'off'].includes(rest[0])) throw new Error('用法：vpnctl integrate codex|claude proxy on|off [--yes]');
+    const prepared = await prepareIntegrationAction(app, 'proxy');
+    prepared.enabled = rest[0] === 'on';
+    if (!flags.yes && !await confirmAction(`将${prepared.enabled ? '开启' : '关闭'} ${app} 的 VPNCTL 网络代理；只影响新启动的会话。`)) return;
+    console.log((await executeIntegrationAction(prepared, { confirmed: true })).message);
+    return;
+  }
   if (action === 'run') {
     const forwarded = rest[0] === '--' ? rest.slice(1) : rest;
     const result = await launchIntegratedApplication(app, forwarded);
